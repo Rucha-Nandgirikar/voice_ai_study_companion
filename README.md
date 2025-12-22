@@ -102,7 +102,7 @@ pip install -r requirements.txt
 
 - `GOOGLE_CLOUD_PROJECT`
 - `GOOGLE_CLOUD_LOCATION` (e.g. `us-central1`)
-- `GEMINI_MODEL` (default: `gemini-1.5-pro`)
+- `GEMINI_MODEL` (default: `gemini-1.5-flash-002`)
 
 Cloud Run will use the service account (ADC).
 
@@ -136,5 +136,34 @@ gcloud run deploy voice-ai-study-companion \
 Notes:
 - `--source .` uses Google’s buildpacks (no Docker required). This repo also includes a Dockerfile if you prefer.
 - For production, don’t use `--allow-unauthenticated`; instead restrict via IAM and call from your extension backend.
+
+## Chrome extension (MVP)
+
+The extension does **one job**: extract page text and call `POST /page/analyze` so your ElevenLabs Agent can tutor with page context.
+
+### Install (Developer mode)
+
+1. Chrome → `chrome://extensions`
+2. Turn on **Developer mode**
+3. Click **Load unpacked**
+4. Select the `extension/` folder in this repo
+
+### Configure
+
+Open the extension popup and set:
+- **Backend URL**: your Cloud Run base URL (e.g. `https://...run.app`)
+- **Session ID**: must match the one used by your ElevenLabs tool (default is `demo1`)
+
+### Use
+
+1. Open a tutorial/article page
+2. Click the extension → **Analyze current page**
+3. Talk to your ElevenLabs Agent:
+   - “Summarize this page”
+   - “Start with databases”
+   - “Explain simpler”
+   - “Quiz me”
+
+
 
 
