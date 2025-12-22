@@ -13,6 +13,32 @@ async function sendToContent(tabId, message) {
   return await chrome.tabs.sendMessage(tabId, message);
 }
 
+async function ensureContentScript(tab) {
+  const url = tab?.url || "";
+  // Chrome blocks extensions on internal/restricted pages.
+  if (
+    url.startsWith("chrome://") ||
+    url.startsWith("chrome-extension://") ||
+    url.startsWith("edge://") ||
+    url.startsWith("about:") ||
+    url.startsWith("view-source:")
+  ) {
+    throw new Error("Chrome blocks extensions on this page. Open a normal https webpage and try again.");
+  }
+
+  try {
+    // Ping existing content script.
+    await sendToContent(tab.id, { type: "PING" });
+    return;
+  } catch (_e) {
+    // If not present, inject it and try again.
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ["content.js"],
+    });
+  }
+}
+
 function setStatus(msg) {
   $("status").textContent = msg;
 }
@@ -53,6 +79,8 @@ async function analyze() {
   try {
     const tab = await getActiveTab();
     if (!tab?.id) throw new Error("No active tab found.");
+
+    await ensureContentScript(tab);
 
     setStatus("Extracting main content…");
     const { cleanedText, url } = await sendToContent(tab.id, {

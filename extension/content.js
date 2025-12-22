@@ -37,6 +37,10 @@ function extractPageText() {
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "PING") {
+    sendResponse({ ok: true });
+    return true;
+  }
   if (msg?.type === "EXTRACT_PAGE") {
     try {
       const cleanedText = extractPageText();
