@@ -3,6 +3,7 @@ import { useConversation } from "@elevenlabs/react";
 import { analyzePage, getElevenLabsSignedUrl } from "./api";
 import { extractPage } from "./chromeExtract";
 import { DEFAULTS, loadSettings, saveSettings, Settings } from "./storage";
+import { SpectrumCanvas } from "./SpectrumCanvas";
 
 type ChatMsg = { role: "user" | "agent"; text: string };
 
@@ -356,6 +357,18 @@ export function SidePanelApp() {
             Agent: <code>{agentStatus}</code> · Speaking: <code>{String(isSpeaking)}</code> · Audio events:{" "}
             <code>{audioEvents}</code> · Output level: <code>{outputLevel.toFixed(2)}</code>
           </div>
+        </div>
+        <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+          <SpectrumCanvas
+            title="Mic input"
+            color="#22c55e"
+            getData={() => (conversation as any)?.getInputByteFrequencyData?.()}
+          />
+          <SpectrumCanvas
+            title="Agent output"
+            color="#60a5fa"
+            getData={() => (conversation as any)?.getOutputByteFrequencyData?.()}
+          />
         </div>
         <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
           <div style={{ flex: 1 }}>
