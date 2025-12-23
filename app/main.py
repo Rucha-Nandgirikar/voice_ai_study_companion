@@ -4,6 +4,7 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 
 from app.gemini_client import GeminiClient
 from app.memory import SessionStore
@@ -13,6 +14,8 @@ from app.schemas import (
     AnalyzePageResponse,
     ConversationTurnRequest,
     ConversationTurnResponse,
+    ElevenLabsSignedUrlRequest,
+    ElevenLabsSignedUrlResponse,
 )
 
 
@@ -109,6 +112,41 @@ def conversation_turn(req: ConversationTurnRequest) -> ConversationTurnResponse:
     state.difficulty = resp.difficulty
     store.append_turn(req.sessionId, "assistant", resp.assistantText)
     return resp
+
+
+@app.post("/elevenlabs/signed_url", response_model=ElevenLabsSignedUrlResponse)
+async def elevenlabs_signed_url(req: ElevenLabsSignedUrlRequest) -> ElevenLabsSignedUrlResponse:
+    """
+    Returns a short-lived signed URL for starting an ElevenLabs Conversational AI session
+    from a client (e.g., extension/React SDK) without exposing the ElevenLabs API key.
+    """
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Missing ELEVENLABS_API_KEY on the server.")
+
+    # ElevenLabs ConvAI signed URL endpoint (per their docs).
+    url = "https://api.elevenlabs.io/v1/convai/conversation/get_signed_url"
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                url,
+                headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+                json={"agent_id": req.agentId},
+            )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=500, detail=f"ElevenLabs signed_url failed: {r.status_code} {r.text}")
+        data = r.json()
+        signed_url = data.get("signed_url") or data.get("signedUrl") or data.get("url")
+        if not signed_url:
+            raise HTTPException(status_code=500, detail=f"ElevenLabs response missing signed_url: {data}")
+        return ElevenLabsSignedUrlResponse(signedUrl=signed_url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"ElevenLabs signed_url error: {e}")
+
+
 
 
 

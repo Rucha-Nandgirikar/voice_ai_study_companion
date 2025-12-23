@@ -3,11 +3,16 @@
   "name": "Voice AI Study Companion",
   "version": "0.1.0",
   "description": "Analyze the current webpage and prep it for your ElevenLabs voice tutor.",
-  "action": {
-    "default_title": "Voice AI Study Companion",
-    "default_popup": "popup.html"
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
+  "background": {
+    "service_worker": "background.js"
   },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "side_panel": {
+    "default_path": "dist/index.html"
+  },
+  "action": {
+    "default_title": "Voice AI Study Companion"
+  },
   "host_permissions": [
     "<all_urls>",
     "https://voice-ai-study-companion-801406519570.us-central1.run.app/*"
@@ -20,5 +25,7 @@
     }
   ]
 }
+
+
 
 

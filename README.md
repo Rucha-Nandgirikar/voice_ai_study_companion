@@ -19,6 +19,7 @@ This repo currently contains the **backend** scaffold needed for the hackathon d
 - `GET /health`
 - `POST /page/analyze`
 - `POST /conversation/turn`
+- `POST /elevenlabs/signed_url` (for embedding the Agent via React SDK without exposing API keys)
 
 ### Session memory (MVP)
 
@@ -111,6 +112,10 @@ Cloud Run will use the service account (ADC).
 - `GOOGLE_API_KEY`
 - `GEMINI_MODEL` (default: `gemini-1.5-pro`)
 
+#### ElevenLabs (needed for embedded React SDK)
+
+- `ELEVENLABS_API_KEY` (server-side only; do **not** put this in the extension)
+
 ### 3) Run
 
 ```bash
@@ -130,7 +135,7 @@ gcloud run deploy voice-ai-study-companion \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,GEMINI_MODEL=gemini-1.5-pro
+  --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,GEMINI_MODEL=gemini-1.5-pro,ELEVENLABS_API_KEY=YOUR_ELEVENLABS_KEY
 ```
 
 Notes:
@@ -148,11 +153,22 @@ The extension does **one job**: extract page text and call `POST /page/analyze` 
 3. Click **Load unpacked**
 4. Select the `extension/` folder in this repo
 
+### Build the React side panel UI
+
+The side panel UI is a Vite+React app that must be built once (it outputs to `extension/dist/`):
+
+```bash
+cd extension/ui
+npm install
+npm run build
+```
+
 ### Configure
 
 Open the extension popup and set:
 - **Backend URL**: your Cloud Run base URL (e.g. `https://...run.app`)
 - **Session ID**: must match the one used by your ElevenLabs tool (default is `demo1`)
+- **ElevenLabs Agent ID**: paste your Agent ID (from ElevenLabs dashboard)
 
 ### Use
 

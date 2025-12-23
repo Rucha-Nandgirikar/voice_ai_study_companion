@@ -52,5 +52,15 @@ class ConversationTurnResponse(BaseModel):
     selectedSectionId: str | None = None
 
 
+class ElevenLabsSignedUrlRequest(BaseModel):
+    agentId: str = Field(..., min_length=1)
+
+
+class ElevenLabsSignedUrlResponse(BaseModel):
+    signedUrl: str
+
+
+
+
 
 
