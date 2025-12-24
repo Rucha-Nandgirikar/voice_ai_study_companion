@@ -51,3 +51,4 @@ async def fetch_and_extract_main_text(url: str) -> str:
     return text
 
 
+

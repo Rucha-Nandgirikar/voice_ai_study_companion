@@ -1,32 +1,36 @@
-import React, { useMemo, useState } from "react";
-import { useConversation } from "@elevenlabs/react";
+import React, { useEffect, useState } from "react";
 import { AGENT_ID } from "../lib/config";
-import { getSignedUrl, urlAnalyze } from "../lib/api";
-
-type Msg = { role: "user" | "agent"; text: string };
+import { extractUrl } from "../lib/api";
 
 export function App() {
-  const sessionId = useMemo(() => crypto.randomUUID(), []);
   const [url, setUrl] = useState<string>("");
   const [status, setStatus] = useState<string>("Paste a URL, click Analyze, then Start.");
-  const [topics, setTopics] = useState<string[]>([]);
-  const [summary, setSummary] = useState<string>("");
-  const [chat, setChat] = useState<Msg[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [preview, setPreview] = useState<string>("");
 
-  const conversation = useConversation({
-    agentId: AGENT_ID || undefined,
-    onMessage: (m: any) => {
-      const role = (m?.role || m?.speaker || "").toString().toLowerCase();
-      const text = (m?.text || m?.message || m?.content || "").toString();
-      if (!text) return;
-      setChat((prev) => [...prev, { role: role.includes("user") ? "user" : "agent", text }].slice(-30));
-    },
-    onError: (e: any) => setStatus(`Agent error: ${e?.message || String(e)}`)
-  });
+  useEffect(() => {
+    // Load ElevenLabs widget embed script once.
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://unpkg.com/@elevenlabs/convai-widget-embed"]'
+    );
+    if (existing) return;
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
+    s.async = true;
+    s.type = "text/javascript";
+    document.body.appendChild(s);
+  }, []);
 
-  const isConnected = !!(conversation as any)?.isSessionActive;
-  const agentStatus = ((conversation as any)?.status || "unknown").toString();
+  function openPage() {
+    const u = url.trim();
+    if (!u) {
+      setStatus("Please paste a URL first.");
+      return;
+    }
+    // Opening in the same tab would navigate away from the app (and the widget).
+    // New tab lets the user read while the call UI stays open.
+    window.open(u, "_blank", "noopener,noreferrer");
+  }
 
   async function onAnalyze() {
     try {
@@ -35,41 +39,18 @@ export function App() {
         return;
       }
       setIsAnalyzing(true);
-      setStatus("Analyzing URL…");
-      const data = await urlAnalyze({ sessionId, url: url.trim() });
-      setSummary(data?.summary || "");
-      setTopics((data?.topics || []).slice(0, 12));
-      setStatus("Analyzed. Click Start and say: “Summarize this page.”");
+      setStatus("Extracting main content…");
+      const data = await extractUrl({ url: url.trim() });
+      const cleaned = (data?.cleanedText || "") as string;
+      setPreview(cleaned.slice(0, 600));
+      setStatus(
+        "Extracted! Now use the ElevenLabs widget below and say: “Summarize this page.”\n\nTip: If your agent has a tool, ask it to ‘fetch and summarize’ this URL."
+      );
+      openPage();
     } catch (e: any) {
       setStatus(`Analyze error: ${e?.message || String(e)}`);
     } finally {
       setIsAnalyzing(false);
-    }
-  }
-
-  async function onStart() {
-    try {
-      if (!AGENT_ID) {
-        setStatus("Missing VITE_AGENT_ID. Set it in web/.env or Vercel env vars.");
-        return;
-      }
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      setStatus("Starting voice session…");
-      const { signedUrl } = await getSignedUrl({ agentId: AGENT_ID });
-      await (conversation as any).startSession?.({ signedUrl });
-      setStatus("Connected. Ask a question (voice).");
-    } catch (e: any) {
-      setStatus(`Start error: ${e?.message || String(e)}`);
-    }
-  }
-
-  async function onStop() {
-    try {
-      setStatus("Stopping…");
-      await (conversation as any).stopSession?.();
-      setStatus("Stopped.");
-    } catch (e: any) {
-      setStatus(`Stop error: ${e?.message || String(e)}`);
     }
   }
 
@@ -81,7 +62,7 @@ export function App() {
           <div className="muted">Paste URL → Gemini analyzes → ElevenLabs voice tutor</div>
         </div>
         <div className="muted">
-          Session: <code>{sessionId.slice(0, 8)}</code> · Agent: <code>{agentStatus}</code>
+          Backend: <code>{new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost").origin}</code>
         </div>
       </div>
 
@@ -98,50 +79,30 @@ export function App() {
             <button onClick={onAnalyze} disabled={isAnalyzing}>
               {isAnalyzing ? "Analyzing…" : "Analyze"}
             </button>
+            <button className="secondary" onClick={openPage} disabled={!url.trim()}>
+              Open page
+            </button>
           </div>
           <div className="status">{status}</div>
         </div>
 
-        {summary && (
+        {preview && (
           <div className="card" style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Summary</div>
-            <div style={{ fontSize: 13, lineHeight: 1.4 }}>{summary}</div>
-          </div>
-        )}
-
-        {topics.length > 0 && (
-          <div className="card" style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Topics</div>
-            <ul className="topics">
-              {topics.map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>Extract preview</div>
+            <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{preview}</div>
           </div>
         )}
       </div>
 
       <div className="bottomBar">
         <div className="bottomInner">
-          <button onClick={onStart} disabled={isConnected}>
-            Start call
-          </button>
-          <button className="secondary" onClick={onStop} disabled={!isConnected}>
-            Stop
-          </button>
-          <div className="chatStrip">
-            {chat.length === 0 ? (
-              <div className="msg">
-                <strong>Tip:</strong> After starting, say “Summarize this page” then “Start with &lt;topic&gt;”.
-              </div>
-            ) : (
-              chat.slice(-6).map((m, i) => (
-                <div className="msg" key={i}>
-                  <strong>{m.role}:</strong> {m.text}
-                </div>
-              ))
-            )}
-          </div>
+          {!AGENT_ID ? (
+            <div className="msg">
+              <strong>Missing VITE_AGENT_ID.</strong> Set it in <code>web/.env</code> (local) or Vercel env vars.
+            </div>
+          ) : (
+            <elevenlabs-convai agent-id={AGENT_ID}></elevenlabs-convai>
+          )}
         </div>
       </div>
     </div>

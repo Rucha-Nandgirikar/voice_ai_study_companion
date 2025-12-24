@@ -64,3 +64,13 @@ class ElevenLabsSignedUrlResponse(BaseModel):
     signedUrl: str
 
 
+class ExtractRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public URL to fetch and extract server-side")
+
+
+class ExtractResponse(BaseModel):
+    url: str
+    cleanedText: str
+
+
+

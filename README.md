@@ -3,7 +3,7 @@
 Voice-first tutor that runs as a simple web app (paste a URL) and uses:
 
 - **ElevenLabs Agents** for conversational voice UX (STT/TTS + persona)
-- **Google Cloud Gemini / Vertex AI** for reasoning (summarize, teach, quiz, adapt)
+- **ElevenLabs Agents** (configured with Gemini in ElevenLabs) for reasoning + voice
 - **Cloud Run** to host the backend API (FastAPI)
 
 This repo contains:
@@ -16,13 +16,10 @@ This repo contains:
 
 ## Backend API (FastAPI)
 
-### Endpoints
+### Endpoints (Option B: agent does all LLM)
 
 - `GET /health`
-- `POST /page/analyze`
-- `POST /url/analyze` (fetch + extract content server-side from a pasted URL)
-- `POST /conversation/turn`
-- `POST /elevenlabs/signed_url` (for embedding the Agent via React SDK without exposing API keys)
+- `POST /extract` (fetch + extract content server-side from a pasted URL)
 
 ### Session memory (MVP)
 
@@ -102,22 +99,9 @@ pip install -r requirements.txt
 
 ### 2) Configure env vars (pick one mode)
 
-#### Mode A: Vertex AI (recommended on Cloud Run)
+#### Env vars (local/dev)
 
-- `GOOGLE_CLOUD_PROJECT`
-- `GOOGLE_CLOUD_LOCATION` (e.g. `us-central1`)
-- `GEMINI_MODEL` (default: `gemini-1.5-flash-002`)
-
-Cloud Run will use the service account (ADC).
-
-#### Mode B: Gemini API key (local/dev)
-
-- `GOOGLE_API_KEY`
-- `GEMINI_MODEL` (default: `gemini-1.5-pro`)
-
-#### ElevenLabs (needed for embedded React SDK)
-
-- `ELEVENLABS_API_KEY` (server-side only; do **not** put this in the extension)
+Option B backend does **not** call Google. No `GOOGLE_API_KEY` needed.
 
 ### 3) Run
 
@@ -138,7 +122,7 @@ gcloud run deploy voice-ai-study-companion \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,GEMINI_MODEL=gemini-1.5-pro,ELEVENLABS_API_KEY=YOUR_ELEVENLABS_KEY
+  --set-env-vars GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
 Notes:
