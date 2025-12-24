@@ -98,7 +98,11 @@ export function App() {
         <div className="bottomInner">
           {!AGENT_ID ? (
             <div className="msg">
-              <strong>Missing VITE_AGENT_ID.</strong> Set it in <code>web/.env</code> (local) or Vercel env vars.
+              {/* <strong>Missing VITE_AGENT_ID.</strong> Set it in <code>web/.env</code> (local) or Vercel env vars. */}
+              <div className="muted" style={{ marginTop: 6 }}>
+                Debug: <code>import.meta.env.VITE_AGENT_ID</code> is{" "}
+                <code>{String(import.meta.env.VITE_AGENT_ID || "") || "(empty)"}</code>
+              </div>
             </div>
           ) : (
             <elevenlabs-convai agent-id={AGENT_ID}></elevenlabs-convai>
