@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +15,11 @@ class AnalyzePageRequest(BaseModel):
     sessionId: str = Field(..., min_length=1)
     url: str = Field(..., min_length=1)
     cleanedText: str = Field(..., min_length=1, description="Main educational content from the page")
+
+
+class UrlAnalyzeRequest(BaseModel):
+    sessionId: str = Field(..., min_length=1)
+    url: str = Field(..., min_length=1, description="Public URL to fetch and analyze server-side")
 
 
 class Section(BaseModel):
@@ -58,9 +62,5 @@ class ElevenLabsSignedUrlRequest(BaseModel):
 
 class ElevenLabsSignedUrlResponse(BaseModel):
     signedUrl: str
-
-
-
-
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -27,7 +27,7 @@ class GeminiClient:
     def __init__(self) -> None:
         # Vertex AI model availability can vary by project/region. Prefer a widely available default.
         # Users can override with GEMINI_MODEL env var (e.g., gemini-1.5-pro-002).
-        self.model = _env("GEMINI_MODEL", "gemini-1.5-flash-002")  # good default on Vertex
+        self.model = _env("GEMINI_MODEL", "gemini-1.5-flash-002")
 
         api_key = _env("GOOGLE_API_KEY")
         project = _env("GOOGLE_CLOUD_PROJECT")
@@ -48,12 +48,6 @@ class GeminiClient:
             )
 
     def _list_models_api_key(self) -> list[dict[str, Any]]:
-        """
-        Lists models available to the provided Gemini API key using the Generative Language API.
-        Returns raw model dicts, including fields like:
-          - name: "models/gemini-..."
-          - supportedGenerationMethods: ["generateContent", ...]
-        """
         if not self._api_key:
             return []
         url = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -66,14 +60,11 @@ class GeminiClient:
 
     @staticmethod
     def _pick_working_models_from_list(models: list[dict[str, Any]]) -> list[str]:
-        """
-        Returns model IDs (without the 'models/' prefix) ordered by preference.
-        """
         def supports_generate(m: dict[str, Any]) -> bool:
             methods = m.get("supportedGenerationMethods") or []
             return "generateContent" in methods
 
-        names = []
+        names: list[str] = []
         for m in models:
             if not supports_generate(m):
                 continue
@@ -84,7 +75,7 @@ class GeminiClient:
                 names.append(name)
 
         # Prefer flash variants for latency/cost, then pro for quality.
-        preferred = []
+        preferred: list[str] = []
         for kw in ["flash", "pro"]:
             for n in names:
                 if kw in n and n not in preferred:
@@ -95,10 +86,6 @@ class GeminiClient:
         return preferred
 
     def generate_json(self, *, system: str, user: str, schema: dict[str, Any]) -> dict[str, Any]:
-        """
-        Uses response_schema to strongly bias well-formed JSON output.
-        """
-        # Retry with fallback models if the configured model isn't available.
         candidates: list[str] = [
             self.model,
             "gemini-1.5-flash",
@@ -134,8 +121,6 @@ class GeminiClient:
             except Exception as e:
                 last_err = e
                 msg = str(e)
-
-                # Retry on model lookup/access failures (Vertex and API-key modes).
                 is_model_not_found = (
                     "NOT_FOUND" in msg
                     and ("was not found" in msg or "not found" in msg or "is not found" in msg)
@@ -143,13 +128,11 @@ class GeminiClient:
                 )
 
                 if is_model_not_found and self._mode == "api_key":
-                    # Pull available models for this API key and try a few.
                     try:
                         models = self._list_models_api_key()
                         extra = self._pick_working_models_from_list(models)[:10]
                         candidates.extend(extra)
                     except Exception:
-                        # If listing fails, still continue with existing candidates.
                         pass
                     continue
 
@@ -160,14 +143,12 @@ class GeminiClient:
 
         if resp is None:
             raise RuntimeError(f"All model candidates failed. Last error: {last_err}")
-        # google-genai returns parsed JSON in resp.parsed when schema is provided.
+
         parsed = getattr(resp, "parsed", None)
         if isinstance(parsed, dict):
             return parsed
-        # fallback: best-effort
+
         text = (resp.text or "").strip()
         raise RuntimeError(f"Model did not return parsed JSON. Raw: {text[:500]}")
-
-
 
 

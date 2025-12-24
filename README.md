@@ -1,12 +1,14 @@
 # Voice AI Study Companion (Hackathon MVP)
 
-Voice-first tutor that runs on any webpage (via extension/widget) and uses:
+Voice-first tutor that runs as a simple web app (paste a URL) and uses:
 
 - **ElevenLabs Agents** for conversational voice UX (STT/TTS + persona)
 - **Google Cloud Gemini / Vertex AI** for reasoning (summarize, teach, quiz, adapt)
 - **Cloud Run** to host the backend API (FastAPI)
 
-This repo currently contains the **backend** scaffold needed for the hackathon demo.
+This repo contains:
+- `backend/`: FastAPI backend (Cloud Run)
+- `web/`: React web UI (Vercel or any static host)
 
 ## What is Cloud Run?
 
@@ -18,6 +20,7 @@ This repo currently contains the **backend** scaffold needed for the hackathon d
 
 - `GET /health`
 - `POST /page/analyze`
+- `POST /url/analyze` (fetch + extract content server-side from a pasted URL)
 - `POST /conversation/turn`
 - `POST /elevenlabs/signed_url` (for embedding the Agent via React SDK without exposing API keys)
 
@@ -57,7 +60,7 @@ In ElevenLabs Agents, define a tool that calls your backend on each user utteran
 }
 ```
 
-### Page analysis call (Extension -> Backend)
+### Page analysis call (Client -> Backend)
 
 `POST /page/analyze`
 
@@ -119,7 +122,7 @@ Cloud Run will use the service account (ADC).
 ### 3) Run
 
 ```bash
-python -m app
+python -m backend
 ```
 
 Open `http://localhost:8080/health`
@@ -142,44 +145,20 @@ Notes:
 - `--source .` uses Google’s buildpacks (no Docker required). This repo also includes a Dockerfile if you prefer.
 - For production, don’t use `--allow-unauthenticated`; instead restrict via IAM and call from your extension backend.
 
-## Chrome extension (MVP)
+## Deploy the web UI (Vercel)
 
-The extension does **one job**: extract page text and call `POST /page/analyze` so your ElevenLabs Agent can tutor with page context.
+1. Push this repo to GitHub.
+2. In Vercel, **Import Project** → select this repo.
+3. Set **Root Directory** to `web/`.
+4. Add env vars:
+   - `VITE_BACKEND_URL` = your Cloud Run base URL
+   - `VITE_AGENT_ID` = your ElevenLabs Agent ID
+5. Deploy.
 
-### Install (Developer mode)
-
-1. Chrome → `chrome://extensions`
-2. Turn on **Developer mode**
-3. Click **Load unpacked**
-4. Select the `extension/` folder in this repo
-
-### Build the React side panel UI
-
-The side panel UI is a Vite+React app that must be built once (it outputs to `extension/dist/`):
+Local dev:
 
 ```bash
-cd extension/ui
+cd web
 npm install
-npm run build
+npm run dev
 ```
-
-### Configure
-
-Open the extension popup and set:
-- **Backend URL**: your Cloud Run base URL (e.g. `https://...run.app`)
-- **Session ID**: must match the one used by your ElevenLabs tool (default is `demo1`)
-- **ElevenLabs Agent ID**: paste your Agent ID (from ElevenLabs dashboard)
-
-### Use
-
-1. Open a tutorial/article page
-2. Click the extension → **Analyze current page**
-3. Talk to your ElevenLabs Agent:
-   - “Summarize this page”
-   - “Start with databases”
-   - “Explain simpler”
-   - “Quiz me”
-
-
-
-

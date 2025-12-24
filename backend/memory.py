@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from cachetools import TTLCache
 
-from app.schemas import AnalyzePageResponse, Difficulty
+from backend.schemas import AnalyzePageResponse, Difficulty
 
 
 @dataclass
@@ -36,9 +36,5 @@ class SessionStore:
         if len(state.turns) > max_turns:
             state.turns = state.turns[-max_turns:]
         return state
-
-
-
-
 
 

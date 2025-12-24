@@ -27,7 +27,3 @@ Voice UX constraints:
 """
 
 
-
-
-
-
