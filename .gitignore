@@ -1,0 +1,17 @@
+# env files
+.env
+web/.env
+backend/.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# node
+node_modules/
+web/node_modules/
+web/dist/
+
+# misc
+.DS_Store
