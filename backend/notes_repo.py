@@ -190,7 +190,9 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET turns = COALESCE(turns, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('role', %s, 'text', %s)),
+                       SET turns = COALESCE(turns, '[]'::jsonb) || jsonb_build_array(
+                             jsonb_build_object('role', %s::text, 'text', %s::text)
+                           ),
                            updated_at = now()
                      WHERE url = %s
                     RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
@@ -215,7 +217,9 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET qa = COALESCE(qa, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('q', %s, 'a', %s)),
+                       SET qa = COALESCE(qa, '[]'::jsonb) || jsonb_build_array(
+                             jsonb_build_object('q', %s::text, 'a', %s::text)
+                           ),
                            updated_at = now()
                      WHERE url = %s
                     RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
@@ -244,10 +248,10 @@ class PostgresNotesRepo:
                     UPDATE notes
                        SET quizzes = COALESCE(quizzes, '[]'::jsonb) || jsonb_build_array(
                              jsonb_build_object(
-                               'question', %s,
-                               'userAnswer', %s,
-                               'correctAnswer', %s,
-                               'explanation', %s
+                               'question', %s::text,
+                               'userAnswer', %s::text,
+                               'correctAnswer', %s::text,
+                               'explanation', %s::text
                              )
                            ),
                            updated_at = now()
