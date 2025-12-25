@@ -91,6 +91,14 @@ class PostgresNotesRepo:
                 # Back-compat for older deployments where the table existed without these columns.
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS questions JSONB NOT NULL DEFAULT '[]'::jsonb;")
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS turns JSONB NOT NULL DEFAULT '[]'::jsonb;")
+                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS qa JSONB NOT NULL DEFAULT '[]'::jsonb;")
+                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS quizzes JSONB NOT NULL DEFAULT '[]'::jsonb;")
+
+                # Heal any legacy NULLs so jsonb concatenation never fails.
+                cur.execute("UPDATE notes SET questions = '[]'::jsonb WHERE questions IS NULL;")
+                cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE turns IS NULL;")
+                cur.execute("UPDATE notes SET qa = '[]'::jsonb WHERE qa IS NULL;")
+                cur.execute("UPDATE notes SET quizzes = '[]'::jsonb WHERE quizzes IS NULL;")
             conn.commit()
 
     def reset(self, url: str) -> NotesRecord:
@@ -150,7 +158,7 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET questions = questions || jsonb_build_array(%s::text),
+                       SET questions = COALESCE(questions, '[]'::jsonb) || jsonb_build_array(%s::text),
                            updated_at = now()
                      WHERE url = %s
                     RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
@@ -181,7 +189,7 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET turns = turns || jsonb_build_array(jsonb_build_object('role', %s, 'text', %s)),
+                       SET turns = COALESCE(turns, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('role', %s, 'text', %s)),
                            updated_at = now()
                      WHERE url = %s
                     RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
@@ -206,7 +214,7 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET qa = qa || jsonb_build_array(jsonb_build_object('q', %s, 'a', %s)),
+                       SET qa = COALESCE(qa, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('q', %s, 'a', %s)),
                            updated_at = now()
                      WHERE url = %s
                     RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
@@ -233,7 +241,7 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET quizzes = quizzes || jsonb_build_array(
+                       SET quizzes = COALESCE(quizzes, '[]'::jsonb) || jsonb_build_array(
                              jsonb_build_object(
                                'question', %s,
                                'userAnswer', %s,
