@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { AGENT_ID } from "../lib/config";
 import { extractUrl } from "../lib/api";
+import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
 
 export function App() {
   const [url, setUrl] = useState<string>("");
@@ -105,7 +106,12 @@ export function App() {
               </div>
             </div>
           ) : (
-            <elevenlabs-convai agent-id={AGENT_ID}></elevenlabs-convai>
+            <>
+              <div className="msg">
+                <strong>Call widget:</strong> look for the floating ElevenLabs call button (bottom-right).
+              </div>
+              <ElevenLabsConvaiPortal agentId={AGENT_ID} />
+            </>
           )}
         </div>
       </div>

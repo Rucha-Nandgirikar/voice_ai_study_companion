@@ -21,6 +21,9 @@ This repo contains:
 - `GET /health`
 - `POST /extract` (fetch + extract content server-side from a pasted URL)
 
+Notes:
+- For **YouTube URLs**, `/extract` will try to fetch a transcript (only works if captions are available). If unavailable, it falls back to regular HTML extraction.
+
 ### Session memory (MVP)
 
 Session is keyed by `sessionId` and stored in an in-memory TTL cache:
