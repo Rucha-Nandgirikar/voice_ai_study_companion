@@ -185,6 +185,12 @@ class PostgresNotesRepo:
                 cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE turns IS NULL;")
                 cur.execute("UPDATE notes SET qa = '[]'::jsonb WHERE qa IS NULL;")
                 cur.execute("UPDATE notes SET quizzes = '[]'::jsonb WHERE quizzes IS NULL;")
+
+                # Also heal wrong JSON shapes (e.g. '{}' instead of '[]') for array-based columns.
+                cur.execute("UPDATE notes SET questions = '[]'::jsonb WHERE jsonb_typeof(questions) <> 'array';")
+                cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE jsonb_typeof(turns) <> 'array';")
+                cur.execute("UPDATE notes SET qa = '[]'::jsonb WHERE jsonb_typeof(qa) <> 'array';")
+                cur.execute("UPDATE notes SET quizzes = '[]'::jsonb WHERE jsonb_typeof(quizzes) <> 'array';")
             conn.commit()
 
     def reset(self, url: str) -> NotesRecord:
@@ -302,7 +308,12 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET qa = COALESCE(qa, '[]'::jsonb) || jsonb_build_array(
+                       SET qa = (
+                             CASE
+                               WHEN qa IS NULL OR jsonb_typeof(qa) <> 'array' THEN '[]'::jsonb
+                               ELSE qa
+                             END
+                           ) || jsonb_build_array(
                              jsonb_build_object('q', %s::text, 'a', %s::text)
                            ),
                            updated_at = now()
@@ -331,7 +342,12 @@ class PostgresNotesRepo:
                 cur.execute(
                     """
                     UPDATE notes
-                       SET quizzes = COALESCE(quizzes, '[]'::jsonb) || jsonb_build_array(
+                       SET quizzes = (
+                             CASE
+                               WHEN quizzes IS NULL OR jsonb_typeof(quizzes) <> 'array' THEN '[]'::jsonb
+                               ELSE quizzes
+                             END
+                           ) || jsonb_build_array(
                              jsonb_build_object(
                                'question', %s::text,
                                'userAnswer', %s::text,
