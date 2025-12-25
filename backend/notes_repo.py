@@ -83,8 +83,6 @@ class PostgresNotesRepo:
                       summary TEXT NOT NULL DEFAULT '',
                       questions JSONB NOT NULL DEFAULT '[]'::jsonb,
                       turns JSONB NOT NULL DEFAULT '[]'::jsonb,
-                      qa JSONB NOT NULL DEFAULT '[]'::jsonb,
-                      quizzes JSONB NOT NULL DEFAULT '[]'::jsonb,
                       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                     );
                     """
@@ -92,146 +90,132 @@ class PostgresNotesRepo:
                 # Back-compat for older deployments where the table existed without these columns.
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS questions JSONB NOT NULL DEFAULT '[]'::jsonb;")
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS turns JSONB NOT NULL DEFAULT '[]'::jsonb;")
-                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS qa JSONB NOT NULL DEFAULT '[]'::jsonb;")
-                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS quizzes JSONB NOT NULL DEFAULT '[]'::jsonb;")
-
-                # If any of these columns exist with the wrong type (e.g. json/text), coerce to jsonb.
-                # This avoids runtime 500s when we do jsonb concatenation (||) in append endpoints.
-                cur.execute(
-                    """
-                    DO $$
-                    BEGIN
-                      IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                         WHERE table_schema = 'public' AND table_name = 'notes'
-                           AND column_name = 'questions' AND udt_name <> 'jsonb'
-                      ) THEN
-                        ALTER TABLE notes
-                          ALTER COLUMN questions TYPE jsonb
-                          USING (
-                            CASE
-                              WHEN questions IS NULL THEN '[]'::jsonb
-                              WHEN pg_typeof(questions)::text = 'jsonb' THEN questions
-                              WHEN pg_typeof(questions)::text = 'json' THEN questions::jsonb
-                              WHEN pg_typeof(questions)::text IN ('text', 'character varying') THEN
-                                CASE WHEN btrim(questions) = '' THEN '[]'::jsonb ELSE questions::jsonb END
-                              ELSE to_jsonb(questions)
-                            END
-                          );
-                      END IF;
-
-                      IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                         WHERE table_schema = 'public' AND table_name = 'notes'
-                           AND column_name = 'turns' AND udt_name <> 'jsonb'
-                      ) THEN
-                        ALTER TABLE notes
-                          ALTER COLUMN turns TYPE jsonb
-                          USING (
-                            CASE
-                              WHEN turns IS NULL THEN '[]'::jsonb
-                              WHEN pg_typeof(turns)::text = 'jsonb' THEN turns
-                              WHEN pg_typeof(turns)::text = 'json' THEN turns::jsonb
-                              WHEN pg_typeof(turns)::text IN ('text', 'character varying') THEN
-                                CASE WHEN btrim(turns) = '' THEN '[]'::jsonb ELSE turns::jsonb END
-                              ELSE to_jsonb(turns)
-                            END
-                          );
-                      END IF;
-
-                      IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                         WHERE table_schema = 'public' AND table_name = 'notes'
-                           AND column_name = 'qa' AND udt_name <> 'jsonb'
-                      ) THEN
-                        ALTER TABLE notes
-                          ALTER COLUMN qa TYPE jsonb
-                          USING (
-                            CASE
-                              WHEN qa IS NULL THEN '[]'::jsonb
-                              WHEN pg_typeof(qa)::text = 'jsonb' THEN qa
-                              WHEN pg_typeof(qa)::text = 'json' THEN qa::jsonb
-                              WHEN pg_typeof(qa)::text IN ('text', 'character varying') THEN
-                                CASE WHEN btrim(qa) = '' THEN '[]'::jsonb ELSE qa::jsonb END
-                              ELSE to_jsonb(qa)
-                            END
-                          );
-                      END IF;
-
-                      IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                         WHERE table_schema = 'public' AND table_name = 'notes'
-                           AND column_name = 'quizzes' AND udt_name <> 'jsonb'
-                      ) THEN
-                        ALTER TABLE notes
-                          ALTER COLUMN quizzes TYPE jsonb
-                          USING (
-                            CASE
-                              WHEN quizzes IS NULL THEN '[]'::jsonb
-                              WHEN pg_typeof(quizzes)::text = 'jsonb' THEN quizzes
-                              WHEN pg_typeof(quizzes)::text = 'json' THEN quizzes::jsonb
-                              WHEN pg_typeof(quizzes)::text IN ('text', 'character varying') THEN
-                                CASE WHEN btrim(quizzes) = '' THEN '[]'::jsonb ELSE quizzes::jsonb END
-                              ELSE to_jsonb(quizzes)
-                            END
-                          );
-                      END IF;
-                    END $$;
-                    """
-                )
+                # We no longer store QA/quizzes in JSONB columns (moved to relational tables below).
+                # Drop legacy columns if they exist to avoid type/default/constraint mismatches causing 500s.
+                cur.execute("ALTER TABLE notes DROP COLUMN IF EXISTS qa;")
+                cur.execute("ALTER TABLE notes DROP COLUMN IF EXISTS quizzes;")
 
                 # Heal any legacy NULLs so jsonb concatenation never fails.
                 cur.execute("UPDATE notes SET questions = '[]'::jsonb WHERE questions IS NULL;")
                 cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE turns IS NULL;")
-                cur.execute("UPDATE notes SET qa = '[]'::jsonb WHERE qa IS NULL;")
-                cur.execute("UPDATE notes SET quizzes = '[]'::jsonb WHERE quizzes IS NULL;")
-
-                # Also heal wrong JSON shapes (e.g. '{}' instead of '[]') for array-based columns.
                 cur.execute("UPDATE notes SET questions = '[]'::jsonb WHERE jsonb_typeof(questions) <> 'array';")
                 cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE jsonb_typeof(turns) <> 'array';")
-                cur.execute("UPDATE notes SET qa = '[]'::jsonb WHERE jsonb_typeof(qa) <> 'array';")
-                cur.execute("UPDATE notes SET quizzes = '[]'::jsonb WHERE jsonb_typeof(quizzes) <> 'array';")
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS notes_qa (
+                      id BIGSERIAL PRIMARY KEY,
+                      url TEXT NOT NULL REFERENCES notes(url) ON DELETE CASCADE,
+                      q TEXT NOT NULL,
+                      a TEXT NOT NULL,
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_qa_url ON notes_qa(url);")
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS notes_quizzes (
+                      id BIGSERIAL PRIMARY KEY,
+                      url TEXT NOT NULL REFERENCES notes(url) ON DELETE CASCADE,
+                      question TEXT NOT NULL,
+                      user_answer TEXT NOT NULL DEFAULT '',
+                      correct_answer TEXT NOT NULL DEFAULT '',
+                      explanation TEXT NOT NULL DEFAULT '',
+                      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_quizzes_url ON notes_quizzes(url);")
             conn.commit()
+
+    def _get_full_record(self, conn, url: str) -> NotesRecord | None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT url, summary, questions, turns, updated_at FROM notes WHERE url = %s;",
+                (url,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            cur.execute(
+                "SELECT q, a FROM notes_qa WHERE url = %s ORDER BY id ASC;",
+                (url,),
+            )
+            qa_rows = cur.fetchall() or []
+
+            cur.execute(
+                """
+                SELECT question, user_answer, correct_answer, explanation
+                  FROM notes_quizzes
+                 WHERE url = %s
+                 ORDER BY id ASC;
+                """,
+                (url,),
+            )
+            quiz_rows = cur.fetchall() or []
+
+        rec = _row_to_record(row)
+        rec.qa = [{"q": (r.get("q") or ""), "a": (r.get("a") or "")} for r in qa_rows]
+        rec.quizzes = [
+            {
+                "question": (r.get("question") or ""),
+                "userAnswer": (r.get("user_answer") or ""),
+                "correctAnswer": (r.get("correct_answer") or ""),
+                "explanation": (r.get("explanation") or ""),
+            }
+            for r in quiz_rows
+        ]
+        return rec
 
     def reset(self, url: str) -> NotesRecord:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO UPDATE
                       SET summary = EXCLUDED.summary,
                           questions = EXCLUDED.questions,
                           turns = EXCLUDED.turns,
-                          qa = EXCLUDED.qa,
-                          quizzes = EXCLUDED.quizzes,
                           updated_at = EXCLUDED.updated_at
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    RETURNING url;
                     """,
                     (url,),
                 )
-                row = cur.fetchone()
+                cur.fetchone()
+
+                cur.execute("DELETE FROM notes_qa WHERE url = %s;", (url,))
+                cur.execute("DELETE FROM notes_quizzes WHERE url = %s;", (url,))
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def set_summary(self, url: str, summary: str) -> NotesRecord:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, %s, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, %s, '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO UPDATE
                       SET summary = EXCLUDED.summary,
                           updated_at = EXCLUDED.updated_at
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    RETURNING url;
                     """,
                     (url, summary.strip()),
                 )
-                row = cur.fetchone()
+                cur.fetchone()
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def append_question(self, url: str, question: str) -> NotesRecord:
         q = (question or "").strip()
@@ -241,8 +225,8 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
@@ -253,13 +237,16 @@ class PostgresNotesRepo:
                        SET questions = COALESCE(questions, '[]'::jsonb) || jsonb_build_array(%s::text),
                            updated_at = now()
                      WHERE url = %s
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    RETURNING url;
                     """,
                     (q, url),
                 )
-                row = cur.fetchone()
+                cur.fetchone()
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def append_turn(self, url: str, role: str, text: str) -> NotesRecord:
         r = (role or "").strip().lower()
@@ -272,8 +259,8 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
@@ -286,100 +273,80 @@ class PostgresNotesRepo:
                            ),
                            updated_at = now()
                      WHERE url = %s
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    RETURNING url;
                     """,
                     (r, t, url),
                 )
-                row = cur.fetchone()
+                cur.fetchone()
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def append_qa(self, url: str, question: str, answer: str) -> NotesRecord:
+        q = (question or "").strip()
+        a = (answer or "").strip()
+        if not q or not a:
+            raise ValueError("Missing question/answer")
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
                 )
                 cur.execute(
-                    """
-                    UPDATE notes
-                       SET qa = (
-                             CASE
-                               WHEN qa IS NULL OR jsonb_typeof(qa) <> 'array' THEN '[]'::jsonb
-                               ELSE qa
-                             END
-                           ) || jsonb_build_array(
-                             jsonb_build_object('q', %s::text, 'a', %s::text)
-                           ),
-                           updated_at = now()
-                     WHERE url = %s
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
-                    """,
-                    (question.strip(), answer.strip(), url),
+                    "INSERT INTO notes_qa (url, q, a) VALUES (%s, %s, %s);",
+                    (url, q, a),
                 )
-                row = cur.fetchone()
+                cur.execute("UPDATE notes SET updated_at = now() WHERE url = %s;", (url,))
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def append_quiz(
         self, url: str, question: str, user_answer: str, correct_answer: str, explanation: str
     ) -> NotesRecord:
+        q = (question or "").strip()
+        if not q:
+            raise ValueError("Missing question")
+        ua = (user_answer or "").strip()
+        ca = (correct_answer or "").strip()
+        ex = (explanation or "").strip()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
                 )
                 cur.execute(
                     """
-                    UPDATE notes
-                       SET quizzes = (
-                             CASE
-                               WHEN quizzes IS NULL OR jsonb_typeof(quizzes) <> 'array' THEN '[]'::jsonb
-                               ELSE quizzes
-                             END
-                           ) || jsonb_build_array(
-                             jsonb_build_object(
-                               'question', %s::text,
-                               'userAnswer', %s::text,
-                               'correctAnswer', %s::text,
-                               'explanation', %s::text
-                             )
-                           ),
-                           updated_at = now()
-                     WHERE url = %s
-                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    INSERT INTO notes_quizzes (url, question, user_answer, correct_answer, explanation)
+                    VALUES (%s, %s, %s, %s, %s);
                     """,
-                    (
-                        question.strip(),
-                        (user_answer or "").strip(),
-                        (correct_answer or "").strip(),
-                        (explanation or "").strip(),
-                        url,
-                    ),
+                    (url, q, ua, ca, ex),
                 )
-                row = cur.fetchone()
+                cur.execute("UPDATE notes SET updated_at = now() WHERE url = %s;", (url,))
             conn.commit()
-        return _row_to_record(row)
+            rec = self._get_full_record(conn, url)
+        if not rec:
+            raise ValueError("Missing row")
+        return rec
 
     def get(self, url: str) -> NotesRecord | None:
         with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT url, summary, questions, turns, qa, quizzes, updated_at FROM notes WHERE url = %s;",
-                    (url,),
-                )
-                row = cur.fetchone()
-        return _row_to_record(row) if row else None
+            rec = self._get_full_record(conn, url)
+        return rec
 
 
 def _row_to_record(row: dict | None) -> NotesRecord:
@@ -389,8 +356,8 @@ def _row_to_record(row: dict | None) -> NotesRecord:
     rec.summary = row.get("summary") or ""
     rec.questions = _coerce_json_list(row.get("questions"))
     rec.turns = _coerce_json_list(row.get("turns"))
-    rec.qa = _coerce_json_list(row.get("qa"))
-    rec.quizzes = _coerce_json_list(row.get("quizzes"))
+    rec.qa = []
+    rec.quizzes = []
     rec.updated_at = (row.get("updated_at") or "").isoformat() if hasattr(row.get("updated_at"), "isoformat") else str(row.get("updated_at"))
     return rec
 
