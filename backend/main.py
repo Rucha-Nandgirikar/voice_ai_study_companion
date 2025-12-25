@@ -21,7 +21,6 @@ from backend.schemas import (
     NotesSetSummaryRequest,
 )
 from backend.notes_repo import PostgresNotesRepo, make_notes_repo
-from backend.notes_store import append_question, append_turn
 from backend.url_extract import fetch_and_extract_main_text
 
 
@@ -115,7 +114,7 @@ def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_question", response_model=NotesGetResponse)
 def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
-    rec = append_question(req.url, req.question)
+    rec = notes_repo.append_question(req.url, req.question)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -129,7 +128,7 @@ def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_turn", response_model=NotesGetResponse)
 def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
-    rec = append_turn(req.url, req.role, req.text)
+    rec = notes_repo.append_turn(req.url, req.role, req.text)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,

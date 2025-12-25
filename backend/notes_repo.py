@@ -11,6 +11,10 @@ class NotesRepo(Protocol):
 
     def set_summary(self, url: str, summary: str) -> NotesRecord: ...
 
+    def append_question(self, url: str, question: str) -> NotesRecord: ...
+
+    def append_turn(self, url: str, role: str, text: str) -> NotesRecord: ...
+
     def append_qa(self, url: str, question: str, answer: str) -> NotesRecord: ...
 
     def append_quiz(
@@ -26,6 +30,18 @@ class InMemoryNotesRepo:
 
     def set_summary(self, url: str, summary: str) -> NotesRecord:
         return set_summary(url, summary)
+
+    def append_question(self, url: str, question: str) -> NotesRecord:
+        # Lazy import to avoid circular deps.
+        from backend.notes_store import append_question  # type: ignore
+
+        return append_question(url, question)
+
+    def append_turn(self, url: str, role: str, text: str) -> NotesRecord:
+        # Lazy import to avoid circular deps.
+        from backend.notes_store import append_turn  # type: ignore
+
+        return append_turn(url, role, text)
 
     def append_qa(self, url: str, question: str, answer: str) -> NotesRecord:
         return append_qa(url, question, answer)
@@ -64,12 +80,17 @@ class PostgresNotesRepo:
                     CREATE TABLE IF NOT EXISTS notes (
                       url TEXT PRIMARY KEY,
                       summary TEXT NOT NULL DEFAULT '',
+                      questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+                      turns JSONB NOT NULL DEFAULT '[]'::jsonb,
                       qa JSONB NOT NULL DEFAULT '[]'::jsonb,
                       quizzes JSONB NOT NULL DEFAULT '[]'::jsonb,
                       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                     );
                     """
                 )
+                # Back-compat for older deployments where the table existed without these columns.
+                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS questions JSONB NOT NULL DEFAULT '[]'::jsonb;")
+                cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS turns JSONB NOT NULL DEFAULT '[]'::jsonb;")
             conn.commit()
 
     def reset(self, url: str) -> NotesRecord:
@@ -77,14 +98,16 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO UPDATE
                       SET summary = EXCLUDED.summary,
+                          questions = EXCLUDED.questions,
+                          turns = EXCLUDED.turns,
                           qa = EXCLUDED.qa,
                           quizzes = EXCLUDED.quizzes,
                           updated_at = EXCLUDED.updated_at
-                    RETURNING url, summary, qa, quizzes, updated_at;
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
                     """,
                     (url,),
                 )
@@ -97,14 +120,73 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, qa, quizzes, updated_at)
-                    VALUES (%s, %s, '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, %s, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO UPDATE
                       SET summary = EXCLUDED.summary,
                           updated_at = EXCLUDED.updated_at
-                    RETURNING url, summary, qa, quizzes, updated_at;
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
                     """,
                     (url, summary.strip()),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return _row_to_record(row)
+
+    def append_question(self, url: str, question: str) -> NotesRecord:
+        q = (question or "").strip()
+        if not q:
+            raise ValueError("Missing question")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    ON CONFLICT (url) DO NOTHING;
+                    """,
+                    (url,),
+                )
+                cur.execute(
+                    """
+                    UPDATE notes
+                       SET questions = questions || jsonb_build_array(%s::text),
+                           updated_at = now()
+                     WHERE url = %s
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    """,
+                    (q, url),
+                )
+                row = cur.fetchone()
+            conn.commit()
+        return _row_to_record(row)
+
+    def append_turn(self, url: str, role: str, text: str) -> NotesRecord:
+        r = (role or "").strip().lower()
+        if r not in {"user", "agent"}:
+            r = "agent"
+        t = (text or "").strip()
+        if not t:
+            raise ValueError("Missing text")
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
+                    ON CONFLICT (url) DO NOTHING;
+                    """,
+                    (url,),
+                )
+                cur.execute(
+                    """
+                    UPDATE notes
+                       SET turns = turns || jsonb_build_array(jsonb_build_object('role', %s, 'text', %s)),
+                           updated_at = now()
+                     WHERE url = %s
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
+                    """,
+                    (r, t, url),
                 )
                 row = cur.fetchone()
             conn.commit()
@@ -115,8 +197,8 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
@@ -127,7 +209,7 @@ class PostgresNotesRepo:
                        SET qa = qa || jsonb_build_array(jsonb_build_object('q', %s, 'a', %s)),
                            updated_at = now()
                      WHERE url = %s
-                    RETURNING url, summary, qa, quizzes, updated_at;
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
                     """,
                     (question.strip(), answer.strip(), url),
                 )
@@ -142,8 +224,8 @@ class PostgresNotesRepo:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO notes (url, summary, qa, quizzes, updated_at)
-                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
+                    INSERT INTO notes (url, summary, questions, turns, qa, quizzes, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, now())
                     ON CONFLICT (url) DO NOTHING;
                     """,
                     (url,),
@@ -161,7 +243,7 @@ class PostgresNotesRepo:
                            ),
                            updated_at = now()
                      WHERE url = %s
-                    RETURNING url, summary, qa, quizzes, updated_at;
+                    RETURNING url, summary, questions, turns, qa, quizzes, updated_at;
                     """,
                     (
                         question.strip(),
@@ -179,7 +261,7 @@ class PostgresNotesRepo:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT url, summary, qa, quizzes, updated_at FROM notes WHERE url = %s;",
+                    "SELECT url, summary, questions, turns, qa, quizzes, updated_at FROM notes WHERE url = %s;",
                     (url,),
                 )
                 row = cur.fetchone()
@@ -194,9 +276,8 @@ def _row_to_record(row: dict | None) -> NotesRecord:
     rec.qa = row.get("qa") or []
     rec.quizzes = row.get("quizzes") or []
     rec.updated_at = (row.get("updated_at") or "").isoformat() if hasattr(row.get("updated_at"), "isoformat") else str(row.get("updated_at"))
-    # legacy fields not stored in DB
-    rec.questions = []
-    rec.turns = []
+    rec.questions = row.get("questions") or []
+    rec.turns = row.get("turns") or []
     return rec
 
 
