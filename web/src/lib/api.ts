@@ -64,5 +64,43 @@ export async function getNotes(params: { url: string }) {
   return await res.json();
 }
 
+export async function getSessions(params?: { limit?: number }) {
+  const base = originOnly(BACKEND_URL);
+  const limit = params?.limit ?? 50;
+  const endpoint = `${base}/sessions?limit=${encodeURIComponent(String(limit))}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Sessions get failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
+export async function touchSession(params: { url: string }) {
+  const base = originOnly(BACKEND_URL);
+  const endpoint = `${base}/sessions/touch`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Sessions touch failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
+export async function deleteSession(params: { url: string }) {
+  const base = originOnly(BACKEND_URL);
+  const endpoint = `${base}/sessions?url=${encodeURIComponent(params.url)}`;
+  const res = await fetch(endpoint, { method: "DELETE" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Sessions delete failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
 
 

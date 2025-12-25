@@ -19,6 +19,8 @@ from backend.schemas import (
     NotesGetResponse,
     NotesResetRequest,
     NotesSetSummaryRequest,
+    SessionTouchRequest,
+    SessionsListResponse,
 )
 from backend.notes_repo import PostgresNotesRepo, make_notes_repo
 from backend.url_extract import fetch_and_extract_main_text
@@ -43,6 +45,9 @@ def root() -> dict:
         "endpoints": [
             "/health",
             "/extract",
+            "/sessions",
+            "/sessions/touch",
+            "/sessions (DELETE)",
             "/notes/reset",
             "/notes/set_summary",
             "/notes/append_question",
@@ -65,6 +70,33 @@ def health() -> dict:
 def _startup() -> None:
     if isinstance(notes_repo, PostgresNotesRepo):
         notes_repo.ensure_schema()
+
+
+@app.get("/sessions", response_model=SessionsListResponse)
+def sessions_list(limit: int = 50) -> SessionsListResponse:
+    try:
+        sessions = notes_repo.list_sessions(limit=limit)
+        return SessionsListResponse(sessions=sessions)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sessions list failed: {e}")
+
+
+@app.post("/sessions/touch")
+def sessions_touch(req: SessionTouchRequest) -> dict:
+    try:
+        notes_repo.touch_session(req.url)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sessions touch failed: {e}")
+
+
+@app.delete("/sessions")
+def sessions_delete(url: str) -> dict:
+    try:
+        notes_repo.delete_session(url)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sessions delete failed: {e}")
 
 
 @app.post("/extract", response_model=ExtractResponse)

@@ -117,4 +117,17 @@ class NotesGetResponse(BaseModel):
     updatedAt: str
 
 
+class SessionItem(BaseModel):
+    url: str
+    updatedAt: str
+
+
+class SessionsListResponse(BaseModel):
+    sessions: list[SessionItem] = Field(default_factory=list)
+
+
+class SessionTouchRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+
+
 

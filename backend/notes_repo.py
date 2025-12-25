@@ -24,6 +24,12 @@ class NotesRepo(Protocol):
 
     def get(self, url: str) -> NotesRecord | None: ...
 
+    def list_sessions(self, limit: int = 50) -> list[dict[str, str]]: ...
+
+    def delete_session(self, url: str) -> None: ...
+
+    def touch_session(self, url: str) -> None: ...
+
 
 class InMemoryNotesRepo:
     def reset(self, url: str) -> NotesRecord:
@@ -54,6 +60,29 @@ class InMemoryNotesRepo:
 
     def get(self, url: str) -> NotesRecord | None:
         return get_notes(url)
+
+    def list_sessions(self, limit: int = 50) -> list[dict[str, str]]:
+        # In-memory: list existing note records by updated_at
+        try:
+            from backend.notes_store import _STORE  # type: ignore
+
+            items = sorted(_STORE.values(), key=lambda r: r.updated_at or "", reverse=True)
+            return [{"url": r.url, "updatedAt": r.updated_at} for r in items[: max(1, int(limit))]]
+        except Exception:
+            return []
+
+    def delete_session(self, url: str) -> None:
+        try:
+            from backend.notes_store import _STORE  # type: ignore
+
+            _STORE.pop(url, None)
+        except Exception:
+            return
+
+    def touch_session(self, url: str) -> None:
+        # Best-effort: touching in-memory notes means reset if missing, otherwise update timestamp.
+        rec = get_notes(url) or reset_notes(url)
+        rec.touch()
 
 
 class PostgresNotesRepo:
@@ -347,6 +376,46 @@ class PostgresNotesRepo:
         with self._connect() as conn:
             rec = self._get_full_record(conn, url)
         return rec
+
+    def list_sessions(self, limit: int = 50) -> list[dict[str, str]]:
+        lim = max(1, min(int(limit or 50), 200))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                # LIMIT doesn't accept a bind param in all drivers/settings; interpolate safe int.
+                cur.execute(
+                    f"SELECT url, updated_at FROM notes ORDER BY updated_at DESC LIMIT {lim};"
+                )
+                rows = cur.fetchall() or []
+        out: list[dict[str, str]] = []
+        for r in rows:
+            ua = r.get("updated_at")
+            out.append(
+                {
+                    "url": r.get("url") or "",
+                    "updatedAt": ua.isoformat() if hasattr(ua, "isoformat") else str(ua or ""),
+                }
+            )
+        return [x for x in out if x["url"]]
+
+    def delete_session(self, url: str) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM notes WHERE url = %s;", (url,))
+            conn.commit()
+
+    def touch_session(self, url: str) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO notes (url, summary, questions, turns, updated_at)
+                    VALUES (%s, '', '[]'::jsonb, '[]'::jsonb, now())
+                    ON CONFLICT (url) DO UPDATE
+                      SET updated_at = now();
+                    """,
+                    (url,),
+                )
+            conn.commit()
 
 
 def _row_to_record(row: dict | None) -> NotesRecord:

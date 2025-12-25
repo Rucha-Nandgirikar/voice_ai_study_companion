@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AGENT_ID } from "../lib/config";
-import { downloadNotesDocx, extractUrl, getNotes, resetNotes } from "../lib/api";
+import { deleteSession, downloadNotesDocx, extractUrl, getNotes, getSessions, resetNotes, touchSession } from "../lib/api";
 import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
 
 type Notes = {
@@ -19,10 +19,8 @@ type Notes = {
 type SessionItem = {
   url: string;
   title: string;
-  lastUsedAt: string;
+  updatedAt: string;
 };
-
-const SESSIONS_KEY = "vasc_sessions_v1";
 
 function safeTitleFromUrl(u: string): string {
   try {
@@ -33,22 +31,6 @@ function safeTitleFromUrl(u: string): string {
   } catch {
     return u.slice(0, 38);
   }
-}
-
-function loadSessions(): SessionItem[] {
-  try {
-    const raw = localStorage.getItem(SESSIONS_KEY);
-    if (!raw) return [];
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return [];
-    return data.filter((x) => x?.url && x?.title && x?.lastUsedAt);
-  } catch {
-    return [];
-  }
-}
-
-function saveSessions(sessions: SessionItem[]) {
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions.slice(0, 50)));
 }
 
 export function App() {
@@ -76,7 +58,25 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    setSessions(loadSessions());
+    // Load sessions from backend (DB-backed).
+    const load = async () => {
+      try {
+        const res = await getSessions({ limit: 50 });
+        const items = Array.isArray(res?.sessions) ? res.sessions : [];
+        setSessions(
+          items
+            .filter((x: any) => x?.url)
+            .map((x: any) => ({
+              url: String(x.url),
+              title: safeTitleFromUrl(String(x.url)),
+              updatedAt: String(x.updatedAt || ""),
+            }))
+        );
+      } catch {
+        // If backend is redeploying/unavailable, keep the current list.
+      }
+    };
+    load();
   }, []);
 
   useEffect(() => {
@@ -133,14 +133,27 @@ export function App() {
       );
       openPage();
 
-      // Save to local sidebar history
-      const now = new Date().toISOString();
-      const item: SessionItem = { url: u, title: safeTitleFromUrl(u), lastUsedAt: now };
-      setSessions((prev) => {
-        const next = [item, ...prev.filter((x) => x.url !== u)];
-        saveSessions(next);
-        return next;
-      });
+      // Bump session in backend + refresh list
+      try {
+        await touchSession({ url: u });
+      } catch {
+        // ignore
+      }
+      try {
+        const res = await getSessions({ limit: 50 });
+        const items = Array.isArray(res?.sessions) ? res.sessions : [];
+        setSessions(
+          items
+            .filter((x: any) => x?.url)
+            .map((x: any) => ({
+              url: String(x.url),
+              title: safeTitleFromUrl(String(x.url)),
+              updatedAt: String(x.updatedAt || ""),
+            }))
+        );
+      } catch {
+        // ignore
+      }
     } catch (e: any) {
       setStatus(`Analyze error: ${e?.message || String(e)}`);
     } finally {
@@ -153,6 +166,22 @@ export function App() {
     setIsNotesAutoRefresh(true);
     setStatus("Loading notes…");
     try {
+      await touchSession({ url: u });
+      const res = await getSessions({ limit: 50 });
+      const items = Array.isArray(res?.sessions) ? res.sessions : [];
+      setSessions(
+        items
+          .filter((x: any) => x?.url)
+          .map((x: any) => ({
+            url: String(x.url),
+            title: safeTitleFromUrl(String(x.url)),
+            updatedAt: String(x.updatedAt || ""),
+          }))
+      );
+    } catch {
+      // ignore
+    }
+    try {
       const data = (await getNotes({ url: u })) as Notes;
       setNotes(data);
       setStatus("Notes loaded.");
@@ -161,12 +190,28 @@ export function App() {
     }
   }
 
-  function onDeleteSession(u: string) {
-    setSessions((prev) => {
-      const next = prev.filter((x) => x.url !== u);
-      saveSessions(next);
-      return next;
-    });
+  async function onDeleteSession(u: string) {
+    try {
+      await deleteSession({ url: u });
+    } catch {
+      // ignore
+    }
+    try {
+      const res = await getSessions({ limit: 50 });
+      const items = Array.isArray(res?.sessions) ? res.sessions : [];
+      setSessions(
+        items
+          .filter((x: any) => x?.url)
+          .map((x: any) => ({
+            url: String(x.url),
+            title: safeTitleFromUrl(String(x.url)),
+            updatedAt: String(x.updatedAt || ""),
+          }))
+      );
+    } catch {
+      // ignore
+      setSessions((prev) => prev.filter((x) => x.url !== u));
+    }
     if (url.trim() === u) {
       setUrl("");
       setNotes(null);
