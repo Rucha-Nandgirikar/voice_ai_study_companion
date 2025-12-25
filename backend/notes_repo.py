@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from typing import Protocol
 
 from backend.notes_store import NotesRecord, append_qa, append_quiz, get_notes, reset_notes, set_summary
@@ -281,12 +282,43 @@ def _row_to_record(row: dict | None) -> NotesRecord:
         raise ValueError("Missing row")
     rec = NotesRecord(url=row["url"])
     rec.summary = row.get("summary") or ""
-    rec.qa = row.get("qa") or []
-    rec.quizzes = row.get("quizzes") or []
+    rec.questions = _coerce_json_list(row.get("questions"))
+    rec.turns = _coerce_json_list(row.get("turns"))
+    rec.qa = _coerce_json_list(row.get("qa"))
+    rec.quizzes = _coerce_json_list(row.get("quizzes"))
     rec.updated_at = (row.get("updated_at") or "").isoformat() if hasattr(row.get("updated_at"), "isoformat") else str(row.get("updated_at"))
-    rec.questions = row.get("questions") or []
-    rec.turns = row.get("turns") or []
     return rec
+
+
+def _coerce_json_list(value) -> list:
+    """
+    Psycopg JSONB typically comes back as Python objects, but can be returned as a JSON string
+    depending on adapters / drivers. Normalize to a Python list for API serialization.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return []
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+            return parsed if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    # Unknown type (e.g. a driver wrapper). Best-effort: try JSON serialization.
+    try:
+        parsed = json.loads(str(value))
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
 
 
 def make_notes_repo() -> NotesRepo:
