@@ -86,7 +86,10 @@ async def extract(req: ExtractRequest) -> ExtractResponse:
 
 @app.post("/notes/reset", response_model=NotesGetResponse)
 def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
-    rec = notes_repo.reset(req.url)
+    try:
+        rec = notes_repo.reset(req.url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes reset failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -100,7 +103,10 @@ def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
 
 @app.post("/notes/set_summary", response_model=NotesGetResponse)
 def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
-    rec = notes_repo.set_summary(req.url, req.summary)
+    try:
+        rec = notes_repo.set_summary(req.url, req.summary)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes set_summary failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -114,7 +120,10 @@ def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_question", response_model=NotesGetResponse)
 def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
-    rec = notes_repo.append_question(req.url, req.question)
+    try:
+        rec = notes_repo.append_question(req.url, req.question)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes append_question failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -128,7 +137,10 @@ def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_turn", response_model=NotesGetResponse)
 def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
-    rec = notes_repo.append_turn(req.url, req.role, req.text)
+    try:
+        rec = notes_repo.append_turn(req.url, req.role, req.text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes append_turn failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -142,7 +154,10 @@ def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_qa", response_model=NotesGetResponse)
 def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
-    rec = notes_repo.append_qa(req.url, req.question, req.answer)
+    try:
+        rec = notes_repo.append_qa(req.url, req.question, req.answer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes append_qa failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -156,7 +171,10 @@ def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
 
 @app.post("/notes/append_quiz", response_model=NotesGetResponse)
 def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
-    rec = notes_repo.append_quiz(req.url, req.question, req.userAnswer, req.correctAnswer, req.explanation)
+    try:
+        rec = notes_repo.append_quiz(req.url, req.question, req.userAnswer, req.correctAnswer, req.explanation)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes append_quiz failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -170,10 +188,16 @@ def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
 
 @app.get("/notes", response_model=NotesGetResponse)
 def notes_get(url: str) -> NotesGetResponse:
-    rec = notes_repo.get(url)
+    try:
+        rec = notes_repo.get(url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Notes get failed: {e}")
     if not rec:
         # If notes were not started yet, return an empty record to simplify clients.
-        rec = notes_repo.reset(url)
+        try:
+            rec = notes_repo.reset(url)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Notes reset failed: {e}")
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
