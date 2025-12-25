@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { AGENT_ID } from "../lib/config";
-import { extractUrl } from "../lib/api";
+import { downloadNotesDocx, extractUrl, resetNotes } from "../lib/api";
 import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
 
 export function App() {
   const [url, setUrl] = useState<string>("");
-  const [status, setStatus] = useState<string>("Paste a URL, click Analyze, then Start.");
+  const [status, setStatus] = useState<string>(
+    "Paste a URL, click Analyze, then start a call with the ElevenLabs Agent (bottom-right) for a spoken summary and Gemini-powered tutoring, quizzes, etc."
+  );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [preview, setPreview] = useState<string>("");
 
@@ -40,6 +42,7 @@ export function App() {
         return;
       }
       setIsAnalyzing(true);
+      await resetNotes({ url: url.trim() });
       setStatus("Extracting main content…");
       const data = await extractUrl({ url: url.trim() });
       const cleaned = (data?.cleanedText || "") as string;
@@ -55,12 +58,29 @@ export function App() {
     }
   }
 
+  async function onDownloadNotes() {
+    try {
+      const u = url.trim();
+      if (!u) {
+        setStatus("Paste a URL first (notes are saved per URL).");
+        return;
+      }
+      setStatus("Preparing notes download…");
+      await downloadNotesDocx({ url: u });
+      setStatus("Downloaded notes (study-notes.docx).");
+    } catch (e: any) {
+      setStatus(`Download notes error: ${e?.message || String(e)}`);
+    }
+  }
+
   return (
     <div className="page">
       <div className="header">
         <div>
           <h1>Voice AI Study Companion</h1>
-          <div className="muted">Paste URL → Gemini analyzes → ElevenLabs voice tutor</div>
+          <div className="muted">
+            Paste a URL → extract content → start a call → ElevenLabs Agent (Gemini brain) summarizes, tutors, and quizzes
+          </div>
         </div>
         <div className="muted">
           Backend: <code>{new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost").origin}</code>
@@ -69,7 +89,7 @@ export function App() {
 
       <div className="content">
         <div className="card">
-          <label>Paste a tutorial URL</label>
+          <label>Paste your URL here</label>
           <div className="row">
             <input
               type="text"
@@ -80,9 +100,12 @@ export function App() {
             <button onClick={onAnalyze} disabled={isAnalyzing}>
               {isAnalyzing ? "Analyzing…" : "Analyze"}
             </button>
-            <button className="secondary" onClick={openPage} disabled={!url.trim()}>
-              Open page
+            <button className="secondary" onClick={onDownloadNotes} disabled={!url.trim()}>
+              Download notes
             </button>
+            {/* <button className="secondary" onClick={openPage} disabled={!url.trim()}>
+              Open page
+            </button> */}
           </div>
           <div className="status">{status}</div>
         </div>

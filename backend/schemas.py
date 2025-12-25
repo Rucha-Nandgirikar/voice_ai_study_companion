@@ -73,4 +73,32 @@ class ExtractResponse(BaseModel):
     cleanedText: str
 
 
+class NotesResetRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+
+
+class NotesSetSummaryRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    summary: str = Field(..., min_length=1, description="Session/page summary to store as notes")
+
+
+class NotesAppendQuestionRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1, description="A question asked during the call")
+
+
+class NotesAppendTurnRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    role: str = Field(..., min_length=1, description="Who said it: 'user' or 'agent'")
+    text: str = Field(..., min_length=1, description="Utterance text to append to notes")
+
+
+class NotesGetResponse(BaseModel):
+    url: str
+    summary: str
+    questions: list[str]
+    turns: list[dict[str, str]] = Field(default_factory=list)
+    updatedAt: str
+
+
 

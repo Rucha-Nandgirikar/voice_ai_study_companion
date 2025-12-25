@@ -20,9 +20,31 @@ This repo contains:
 
 - `GET /health`
 - `POST /extract` (fetch + extract content server-side from a pasted URL)
+- Notes (MVP; in-memory):
+  - `POST /notes/reset` (start notes for a URL)
+  - `POST /notes/set_summary` (agent saves a summary)
+  - `POST /notes/append_question` (agent saves questions asked)
+  - `POST /notes/append_turn` (agent saves full call turns: user + tutor)
+  - `GET /notes/download.docx?url=...` (download notes as a Word document)
 
 Notes:
 - For **YouTube URLs**, `/extract` will try to fetch a transcript (only works if captions are available). If unavailable, it falls back to regular HTML extraction.
+
+### ElevenLabs Agent tools (recommended)
+Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
+
+- `fetch_page_content(url)` → calls `POST /extract`
+- `set_summary(url, summary)` → calls `POST /notes/set_summary`
+- `append_turn(url, role, text)` → calls `POST /notes/append_turn` (recommended)
+  - `role`: `user` or `agent`
+  - `text`: the utterance
+- (optional) `append_question(url, question)` → calls `POST /notes/append_question`
+
+Then tell the agent in its system prompt:
+- When a user provides a URL / says “analyze”, call `fetch_page_content(url)` first.
+- After summarizing, call `set_summary(url, summary)`.
+- After each user question, call `append_turn(url, "user", question)`.
+- After each tutor answer, call `append_turn(url, "agent", answer)`.
 
 ### Session memory (MVP)
 
