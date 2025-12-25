@@ -95,6 +95,91 @@ class PostgresNotesRepo:
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS qa JSONB NOT NULL DEFAULT '[]'::jsonb;")
                 cur.execute("ALTER TABLE notes ADD COLUMN IF NOT EXISTS quizzes JSONB NOT NULL DEFAULT '[]'::jsonb;")
 
+                # If any of these columns exist with the wrong type (e.g. json/text), coerce to jsonb.
+                # This avoids runtime 500s when we do jsonb concatenation (||) in append endpoints.
+                cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                         WHERE table_schema = 'public' AND table_name = 'notes'
+                           AND column_name = 'questions' AND udt_name <> 'jsonb'
+                      ) THEN
+                        ALTER TABLE notes
+                          ALTER COLUMN questions TYPE jsonb
+                          USING (
+                            CASE
+                              WHEN questions IS NULL THEN '[]'::jsonb
+                              WHEN pg_typeof(questions)::text = 'jsonb' THEN questions
+                              WHEN pg_typeof(questions)::text = 'json' THEN questions::jsonb
+                              WHEN pg_typeof(questions)::text IN ('text', 'character varying') THEN
+                                CASE WHEN btrim(questions) = '' THEN '[]'::jsonb ELSE questions::jsonb END
+                              ELSE to_jsonb(questions)
+                            END
+                          );
+                      END IF;
+
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                         WHERE table_schema = 'public' AND table_name = 'notes'
+                           AND column_name = 'turns' AND udt_name <> 'jsonb'
+                      ) THEN
+                        ALTER TABLE notes
+                          ALTER COLUMN turns TYPE jsonb
+                          USING (
+                            CASE
+                              WHEN turns IS NULL THEN '[]'::jsonb
+                              WHEN pg_typeof(turns)::text = 'jsonb' THEN turns
+                              WHEN pg_typeof(turns)::text = 'json' THEN turns::jsonb
+                              WHEN pg_typeof(turns)::text IN ('text', 'character varying') THEN
+                                CASE WHEN btrim(turns) = '' THEN '[]'::jsonb ELSE turns::jsonb END
+                              ELSE to_jsonb(turns)
+                            END
+                          );
+                      END IF;
+
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                         WHERE table_schema = 'public' AND table_name = 'notes'
+                           AND column_name = 'qa' AND udt_name <> 'jsonb'
+                      ) THEN
+                        ALTER TABLE notes
+                          ALTER COLUMN qa TYPE jsonb
+                          USING (
+                            CASE
+                              WHEN qa IS NULL THEN '[]'::jsonb
+                              WHEN pg_typeof(qa)::text = 'jsonb' THEN qa
+                              WHEN pg_typeof(qa)::text = 'json' THEN qa::jsonb
+                              WHEN pg_typeof(qa)::text IN ('text', 'character varying') THEN
+                                CASE WHEN btrim(qa) = '' THEN '[]'::jsonb ELSE qa::jsonb END
+                              ELSE to_jsonb(qa)
+                            END
+                          );
+                      END IF;
+
+                      IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                         WHERE table_schema = 'public' AND table_name = 'notes'
+                           AND column_name = 'quizzes' AND udt_name <> 'jsonb'
+                      ) THEN
+                        ALTER TABLE notes
+                          ALTER COLUMN quizzes TYPE jsonb
+                          USING (
+                            CASE
+                              WHEN quizzes IS NULL THEN '[]'::jsonb
+                              WHEN pg_typeof(quizzes)::text = 'jsonb' THEN quizzes
+                              WHEN pg_typeof(quizzes)::text = 'json' THEN quizzes::jsonb
+                              WHEN pg_typeof(quizzes)::text IN ('text', 'character varying') THEN
+                                CASE WHEN btrim(quizzes) = '' THEN '[]'::jsonb ELSE quizzes::jsonb END
+                              ELSE to_jsonb(quizzes)
+                            END
+                          );
+                      END IF;
+                    END $$;
+                    """
+                )
+
                 # Heal any legacy NULLs so jsonb concatenation never fails.
                 cur.execute("UPDATE notes SET questions = '[]'::jsonb WHERE questions IS NULL;")
                 cur.execute("UPDATE notes SET turns = '[]'::jsonb WHERE turns IS NULL;")
