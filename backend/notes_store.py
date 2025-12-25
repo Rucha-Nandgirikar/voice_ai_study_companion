@@ -14,6 +14,8 @@ class NotesRecord:
     summary: str = ""
     questions: list[str] = field(default_factory=list)
     turns: list[dict[str, str]] = field(default_factory=list)  # [{"role":"user|agent","text":"..."}]
+    qa: list[dict[str, str]] = field(default_factory=list)  # [{"q":"...","a":"..."}]
+    quizzes: list[dict[str, str]] = field(default_factory=list)  # [{"question","userAnswer","correctAnswer","explanation"}]
     updated_at: str = field(default_factory=_now_iso)
 
     def touch(self) -> None:
@@ -60,6 +62,43 @@ def append_turn(url: str, role: str, text: str) -> NotesRecord:
     t = (text or "").strip()
     if t:
         rec.turns.append({"role": r, "text": t})
+    rec.touch()
+    _STORE[url] = rec
+    return rec
+
+
+def append_qa(url: str, question: str, answer: str) -> NotesRecord:
+    rec = _STORE.get(url) or NotesRecord(url=url)
+    q = (question or "").strip()
+    a = (answer or "").strip()
+    if q and a:
+        rec.qa.append({"q": q, "a": a})
+    rec.touch()
+    _STORE[url] = rec
+    return rec
+
+
+def append_quiz(
+    url: str,
+    question: str,
+    user_answer: str,
+    correct_answer: str,
+    explanation: str,
+) -> NotesRecord:
+    rec = _STORE.get(url) or NotesRecord(url=url)
+    q = (question or "").strip()
+    ua = (user_answer or "").strip()
+    ca = (correct_answer or "").strip()
+    ex = (explanation or "").strip()
+    if q:
+        rec.quizzes.append(
+            {
+                "question": q,
+                "userAnswer": ua,
+                "correctAnswer": ca,
+                "explanation": ex,
+            }
+        )
     rec.touch()
     _STORE[url] = rec
     return rec

@@ -93,11 +93,27 @@ class NotesAppendTurnRequest(BaseModel):
     text: str = Field(..., min_length=1, description="Utterance text to append to notes")
 
 
+class NotesAppendQARequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1, description="User question (or tutor prompt) to store in notes")
+    answer: str = Field(..., min_length=1, description="Tutor answer to store in notes")
+
+
+class NotesAppendQuizRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    question: str = Field(..., min_length=1, description="Quiz question/prompt")
+    userAnswer: str = Field("", description="User answer (optionally polished)")
+    correctAnswer: str = Field("", description="Correct answer")
+    explanation: str = Field("", description="Short explanation / feedback")
+
+
 class NotesGetResponse(BaseModel):
     url: str
     summary: str
     questions: list[str]
     turns: list[dict[str, str]] = Field(default_factory=list)
+    qa: list[dict[str, str]] = Field(default_factory=list)
+    quizzes: list[dict[str, str]] = Field(default_factory=list)
     updatedAt: str
 
 

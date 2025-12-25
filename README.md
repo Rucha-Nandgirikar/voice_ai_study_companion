@@ -23,8 +23,10 @@ This repo contains:
 - Notes (MVP; in-memory):
   - `POST /notes/reset` (start notes for a URL)
   - `POST /notes/set_summary` (agent saves a summary)
-  - `POST /notes/append_question` (agent saves questions asked)
-  - `POST /notes/append_turn` (agent saves full call turns: user + tutor)
+  - `POST /notes/append_qa` (agent saves a Q&A pair)
+  - `POST /notes/append_quiz` (agent saves a quiz item with feedback)
+  - (optional) `POST /notes/append_turn` (raw transcript turns)
+  - (legacy) `POST /notes/append_question`
   - `GET /notes/download.docx?url=...` (download notes as a Word document)
 
 Notes:
@@ -35,16 +37,15 @@ Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved autom
 
 - `fetch_page_content(url)` → calls `POST /extract`
 - `set_summary(url, summary)` → calls `POST /notes/set_summary`
-- `append_turn(url, role, text)` → calls `POST /notes/append_turn` (recommended)
-  - `role`: `user` or `agent`
-  - `text`: the utterance
-- (optional) `append_question(url, question)` → calls `POST /notes/append_question`
+- `append_qa(url, question, answer)` → calls `POST /notes/append_qa` (recommended)
+- `append_quiz(url, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
+- (optional) `append_turn(url, role, text)` → calls `POST /notes/append_turn` (raw transcript)
 
 Then tell the agent in its system prompt:
 - When a user provides a URL / says “analyze”, call `fetch_page_content(url)` first.
 - After summarizing, call `set_summary(url, summary)`.
-- After each user question, call `append_turn(url, "user", question)`.
-- After each tutor answer, call `append_turn(url, "agent", answer)`.
+- When the user asks a question and you answer it, call `append_qa(url, question, answer)`.
+- When you run a quiz, call `append_quiz(...)` with the prompt and feedback.
 
 ### Session memory (MVP)
 
