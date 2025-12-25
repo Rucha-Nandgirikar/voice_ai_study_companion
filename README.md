@@ -32,6 +32,32 @@ This repo contains:
 Notes:
 - For **YouTube URLs**, `/extract` will try to fetch a transcript (only works if captions are available). If unavailable, it falls back to regular HTML extraction.
 
+### Optional: Persist notes in Postgres (Cloud SQL)
+By default notes are stored **in-memory** (they reset if Cloud Run restarts). To persist notes:
+
+- Create a **Cloud SQL for PostgreSQL** instance
+- Set `DATABASE_URL` on Cloud Run
+- (Recommended) attach the Cloud SQL instance to your Cloud Run service
+
+Example `DATABASE_URL` for Cloud Run using the Cloud SQL Unix socket:
+
+```text
+DATABASE_URL=postgresql://USER:PASSWORD@/DB_NAME?host=/cloudsql/PROJECT:REGION:INSTANCE
+```
+
+Deploy with Cloud SQL attached (Cloud Shell):
+
+```bash
+gcloud run deploy voice-ai-study-companion \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --add-cloudsql-instances PROJECT:REGION:INSTANCE \
+  --set-env-vars DATABASE_URL="postgresql://USER:PASSWORD@/DB_NAME?host=/cloudsql/PROJECT:REGION:INSTANCE"
+```
+
+Also ensure the Cloud Run runtime service account has the **Cloud SQL Client** role.
+
 ### ElevenLabs Agent tools (recommended)
 Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
 

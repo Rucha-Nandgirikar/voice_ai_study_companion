@@ -20,19 +20,13 @@ from backend.schemas import (
     NotesResetRequest,
     NotesSetSummaryRequest,
 )
-from backend.notes_store import (
-    append_question,
-    append_quiz,
-    append_qa,
-    append_turn,
-    get_notes,
-    reset_notes,
-    set_summary,
-)
+from backend.notes_repo import PostgresNotesRepo, make_notes_repo
+from backend.notes_store import append_question, append_turn
 from backend.url_extract import fetch_and_extract_main_text
 
 
 app = FastAPI(title="Voice AI Study Companion API", version="0.2.0")
+notes_repo = make_notes_repo()
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,6 +62,12 @@ def health() -> dict:
     return {"ok": True}
 
 
+@app.on_event("startup")
+def _startup() -> None:
+    if isinstance(notes_repo, PostgresNotesRepo):
+        notes_repo.ensure_schema()
+
+
 @app.post("/extract", response_model=ExtractResponse)
 async def extract(req: ExtractRequest) -> ExtractResponse:
     """
@@ -87,7 +87,7 @@ async def extract(req: ExtractRequest) -> ExtractResponse:
 
 @app.post("/notes/reset", response_model=NotesGetResponse)
 def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
-    rec = reset_notes(req.url)
+    rec = notes_repo.reset(req.url)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -101,7 +101,7 @@ def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
 
 @app.post("/notes/set_summary", response_model=NotesGetResponse)
 def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
-    rec = set_summary(req.url, req.summary)
+    rec = notes_repo.set_summary(req.url, req.summary)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -143,7 +143,7 @@ def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
 
 @app.post("/notes/append_qa", response_model=NotesGetResponse)
 def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
-    rec = append_qa(req.url, req.question, req.answer)
+    rec = notes_repo.append_qa(req.url, req.question, req.answer)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -157,13 +157,7 @@ def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
 
 @app.post("/notes/append_quiz", response_model=NotesGetResponse)
 def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
-    rec = append_quiz(
-        req.url,
-        req.question,
-        req.userAnswer,
-        req.correctAnswer,
-        req.explanation,
-    )
+    rec = notes_repo.append_quiz(req.url, req.question, req.userAnswer, req.correctAnswer, req.explanation)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -177,10 +171,10 @@ def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
 
 @app.get("/notes", response_model=NotesGetResponse)
 def notes_get(url: str) -> NotesGetResponse:
-    rec = get_notes(url)
+    rec = notes_repo.get(url)
     if not rec:
         # If notes were not started yet, return an empty record to simplify clients.
-        rec = reset_notes(url)
+        rec = notes_repo.reset(url)
     return NotesGetResponse(
         url=rec.url,
         summary=rec.summary,
@@ -194,7 +188,7 @@ def notes_get(url: str) -> NotesGetResponse:
 
 @app.get("/notes/download.docx")
 def notes_download_docx(url: str) -> StreamingResponse:
-    rec = get_notes(url) or reset_notes(url)
+    rec = notes_repo.get(url) or notes_repo.reset(url)
 
     doc = Document()
     doc.add_heading("Voice AI Study Notes", level=1)

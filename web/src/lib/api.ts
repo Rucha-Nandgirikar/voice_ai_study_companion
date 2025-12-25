@@ -53,5 +53,16 @@ export async function downloadNotesDocx(params: { url: string }) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
 }
 
+export async function getNotes(params: { url: string }) {
+  const base = originOnly(BACKEND_URL);
+  const endpoint = `${base}/notes?url=${encodeURIComponent(params.url)}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Notes get failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
 
 
