@@ -100,9 +100,26 @@ body {
   padding: 18px 16px;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  flex: 0 0 auto;
 }
 
 .header h1 {
@@ -112,6 +129,38 @@ body {
 
 .header .muted {
   color: #64748b;
+  font-size: 12px;
+}
+
+.hero {
+  text-align: center;
+  margin: 10px 0 14px;
+}
+
+.heroLogo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.heroTitle {
+  margin: 10px 0 4px;
+  font-size: 18px;
+}
+
+.heroSubtitle {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.heroMeta {
+  margin-top: 8px;
   font-size: 12px;
 }
 

@@ -256,18 +256,6 @@ export function App() {
 
   return (
     <div className="page">
-      <div className="header">
-        <div>
-          <h1>Voice AI Study Companion</h1>
-          <div className="muted">
-            Paste a URL → extract content → start a call → ElevenLabs Agent (Gemini brain) summarizes, tutors, and quizzes
-          </div>
-        </div>
-        <div className="muted">
-          Backend: <code>{new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost").origin}</code>
-        </div>
-      </div>
-
       <div className="layout">
         <aside className="sidebar">
           <div className="sidebarTitle">Sessions</div>
@@ -312,6 +300,17 @@ export function App() {
 
         <main className="main">
           <div className="content">
+            <div className="hero">
+              <img className="heroLogo" src="/robot.svg" alt="Robot logo" />
+              <h1 className="heroTitle">AI Study Buddy</h1>
+              {/* <div className="heroSubtitle">
+                Paste any URL → extract content → start a call with ElevenLabs Agent → the agent uses Gemini to summarize, tutor, and quiz you
+              </div> */}
+              {/* <div className="heroMeta muted">
+                Backend: <code>{new URL(import.meta.env.VITE_BACKEND_URL || "http://localhost").origin}</code>
+              </div> */}
+            </div>
+
             <div className="card">
               <label>Paste your URL here</label>
               <div className="row">
