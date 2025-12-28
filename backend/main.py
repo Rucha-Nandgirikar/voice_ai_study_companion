@@ -20,8 +20,6 @@ from backend.schemas import (
     TopicsRequest,
     TopicsResponse,
     TopicItem,
-    TopicsSelectRequest,
-    TopicsSelectResponse,
     NotesAppendQuestionRequest,
     NotesAppendTurnRequest,
     NotesAppendQARequest,
@@ -29,12 +27,13 @@ from backend.schemas import (
     NotesGetResponse,
     NotesResetRequest,
     NotesSetSummaryRequest,
-    SessionTouchRequest,
+    SessionStartRequest,
+    SessionLatestResponse,
+    SessionItem,
     SessionsListResponse,
 )
-from backend.notes_repo import PostgresNotesRepo, make_notes_repo
 from backend.url_extract import fetch_and_extract_main_text, fetch_and_extract_topics
-from backend.topic_selection import TopicSelectionStore
+from backend.study_repo import PostgresStudyRepo, make_study_repo
 
 
 # Local dev convenience:
@@ -57,8 +56,7 @@ app = FastAPI(
     version="0.2.0",
     openapi_tags=openapi_tags,
 )
-notes_repo = make_notes_repo()
-topic_selection = TopicSelectionStore()
+repo = make_study_repo()
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,10 +75,9 @@ def root() -> dict:
             "/health",
             "/extract",
             "/topics",
-            "/topics/select",
-            "/topics/selected",
             "/sessions",
-            "/sessions/touch",
+            "/sessions/start",
+            "/sessions/latest",
             "/sessions (DELETE)",
             "/notes/reset",
             "/notes/set_summary",
@@ -102,32 +99,73 @@ def health() -> dict:
 
 @app.on_event("startup")
 def _startup() -> None:
-    if isinstance(notes_repo, PostgresNotesRepo):
-        notes_repo.ensure_schema()
+    if isinstance(repo, PostgresStudyRepo):
+        repo.ensure_schema()
 
 
 @app.get("/sessions", response_model=SessionsListResponse, tags=["Sessions"])
 def sessions_list(limit: int = 50) -> SessionsListResponse:
     try:
-        sessions = notes_repo.list_sessions(limit=limit)
-        return SessionsListResponse(sessions=sessions)
+        sessions = repo.list_sessions(limit=limit)
+        items = [
+            SessionItem(
+                sessionId=s.session_id,
+                url=s.url,
+                selectedTopics=s.selected_topics,
+                completedTopics=s.completed_topics,
+                currentTopic=s.current_topic,
+                createdAt=s.created_at,
+                updatedAt=s.updated_at,
+            )
+            for s in sessions
+        ]
+        return SessionsListResponse(sessions=items)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sessions list failed: {e}")
 
 
-@app.post("/sessions/touch", tags=["Sessions"])
-def sessions_touch(req: SessionTouchRequest) -> dict:
+@app.post("/sessions/start", response_model=SessionItem, tags=["Sessions"])
+def sessions_start(req: SessionStartRequest) -> SessionItem:
     try:
-        notes_repo.touch_session(req.url)
-        return {"ok": True}
+        s = repo.start_session(req.url, req.selectedTopics or [])
+        return SessionItem(
+            sessionId=s.session_id,
+            url=s.url,
+            selectedTopics=s.selected_topics,
+            completedTopics=s.completed_topics,
+            currentTopic=s.current_topic,
+            createdAt=s.created_at,
+            updatedAt=s.updated_at,
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sessions touch failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Sessions start failed: {e}")
+
+
+@app.get("/sessions/latest", response_model=SessionLatestResponse, tags=["Sessions"])
+def sessions_latest(url: str) -> SessionLatestResponse:
+    try:
+        s = repo.latest_session_for_url(url)
+        if not s:
+            return SessionLatestResponse(session=None)
+        return SessionLatestResponse(
+            session=SessionItem(
+                sessionId=s.session_id,
+                url=s.url,
+                selectedTopics=s.selected_topics,
+                completedTopics=s.completed_topics,
+                currentTopic=s.current_topic,
+                createdAt=s.created_at,
+                updatedAt=s.updated_at,
+            )
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sessions latest failed: {e}")
 
 
 @app.delete("/sessions", tags=["Sessions"])
-def sessions_delete(url: str) -> dict:
+def sessions_delete(sessionId: str) -> dict:
     try:
-        notes_repo.delete_session(url)
+        repo.delete_session(sessionId)
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sessions delete failed: {e}")
@@ -279,36 +317,24 @@ async def topics(req: TopicsRequest) -> TopicsResponse:
         raise HTTPException(status_code=500, detail=f"Topics failed: {e}")
 
 
-@app.post("/topics/select", response_model=TopicsSelectResponse, tags=["Topics"])
-def topics_select(req: TopicsSelectRequest) -> TopicsSelectResponse:
-    try:
-        chosen = [t.strip() for t in (req.topics or []) if str(t).strip()]
-        # enforce <=5 server-side too
-        chosen = chosen[:5]
-        rec = topic_selection.set(req.url, chosen)
-        return TopicsSelectResponse(url=rec.url, topics=rec.topics, updatedAt=str(int(rec.updated_at)))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Topics select failed: {e}")
+@app.post("/topics/select", tags=["Topics"], include_in_schema=False)
+def topics_select_legacy(_: dict) -> dict:
+    raise HTTPException(status_code=410, detail="Deprecated. Use POST /sessions/start to store selected topics.")
 
 
-@app.get("/topics/selected", response_model=TopicsSelectResponse, tags=["Topics"])
-def topics_selected(url: str) -> TopicsSelectResponse:
-    try:
-        rec = topic_selection.get(url)
-        if not rec:
-            return TopicsSelectResponse(url=url, topics=[], updatedAt="")
-        return TopicsSelectResponse(url=rec.url, topics=rec.topics, updatedAt=str(int(rec.updated_at)))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Topics selected failed: {e}")
+@app.get("/topics/selected", tags=["Topics"], include_in_schema=False)
+def topics_selected_legacy(_: str) -> dict:
+    raise HTTPException(status_code=410, detail="Deprecated. Use GET /sessions/latest?url=... to read selected topics.")
 
 
 @app.post("/notes/reset", response_model=NotesGetResponse, tags=["Notes"])
 def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.reset(req.url)
+        rec = repo.reset_notes(req.sessionId)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes reset failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -322,10 +348,11 @@ def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
 @app.post("/notes/set_summary", response_model=NotesGetResponse, tags=["Notes"])
 def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.set_summary(req.url, req.summary)
+        rec = repo.set_summary(req.sessionId, req.summary)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes set_summary failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -339,10 +366,11 @@ def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
 @app.post("/notes/append_question", response_model=NotesGetResponse, tags=["Notes"], include_in_schema=False)
 def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.append_question(req.url, req.question)
+        rec = repo.append_turn(req.sessionId, "user", req.question)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes append_question failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -356,10 +384,11 @@ def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
 @app.post("/notes/append_turn", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.append_turn(req.url, req.role, req.text)
+        rec = repo.append_turn(req.sessionId, req.role, req.text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes append_turn failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -373,10 +402,11 @@ def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
 @app.post("/notes/append_qa", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.append_qa(req.url, req.question, req.answer)
+        rec = repo.append_qa(req.sessionId, req.question, req.answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes append_qa failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -390,10 +420,11 @@ def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
 @app.post("/notes/append_quiz", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
     try:
-        rec = notes_repo.append_quiz(req.url, req.question, req.userAnswer, req.correctAnswer, req.explanation)
+        rec = repo.append_quiz(req.sessionId, req.question, req.userAnswer, req.correctAnswer, req.explanation)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes append_quiz failed: {e}")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -405,18 +436,15 @@ def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
 
 
 @app.get("/notes", response_model=NotesGetResponse, tags=["Notes"])
-def notes_get(url: str) -> NotesGetResponse:
+def notes_get(sessionId: str) -> NotesGetResponse:
     try:
-        rec = notes_repo.get(url)
+        rec = repo.get_notes(sessionId)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Notes get failed: {e}")
     if not rec:
-        # If notes were not started yet, return an empty record to simplify clients.
-        try:
-            rec = notes_repo.reset(url)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Notes reset failed: {e}")
+        raise HTTPException(status_code=404, detail="Unknown sessionId")
     return NotesGetResponse(
+        sessionId=rec.session_id,
         url=rec.url,
         summary=rec.summary,
         questions=rec.questions,
@@ -428,8 +456,10 @@ def notes_get(url: str) -> NotesGetResponse:
 
 
 @app.get("/notes/download.docx", tags=["Notes"])
-def notes_download_docx(url: str) -> StreamingResponse:
-    rec = notes_repo.get(url) or notes_repo.reset(url)
+def notes_download_docx(sessionId: str) -> StreamingResponse:
+    rec = repo.get_notes(sessionId)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Unknown sessionId")
 
     doc = Document()
     doc.add_heading("Voice AI Study Notes", level=1)

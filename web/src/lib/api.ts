@@ -20,9 +20,9 @@ export async function getTopics(params: { url: string }) {
   return await res.json();
 }
 
-export async function selectTopics(params: { url: string; topics: string[] }) {
+export async function startSession(params: { url: string; selectedTopics: string[] }) {
   const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/topics/select`;
+  const endpoint = `${base}/sessions/start`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -30,29 +30,14 @@ export async function selectTopics(params: { url: string; topics: string[] }) {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Topics select failed (${res.status}) @ ${endpoint}: ${text}`);
+    throw new Error(`Session start failed (${res.status}) @ ${endpoint}: ${text}`);
   }
   return await res.json();
 }
 
-export async function resetNotes(params: { url: string }) {
+export async function downloadNotesDocx(params: { sessionId: string }) {
   const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/notes/reset`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params)
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Notes reset failed (${res.status}) @ ${endpoint}: ${text}`);
-  }
-  return await res.json();
-}
-
-export async function downloadNotesDocx(params: { url: string }) {
-  const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/notes/download.docx?url=${encodeURIComponent(params.url)}`;
+  const endpoint = `${base}/notes/download.docx?sessionId=${encodeURIComponent(params.sessionId)}`;
   const res = await fetch(endpoint);
   if (!res.ok) {
     const text = await res.text();
@@ -68,9 +53,9 @@ export async function downloadNotesDocx(params: { url: string }) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
 }
 
-export async function getNotes(params: { url: string }) {
+export async function getNotes(params: { sessionId: string }) {
   const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/notes?url=${encodeURIComponent(params.url)}`;
+  const endpoint = `${base}/notes?sessionId=${encodeURIComponent(params.sessionId)}`;
   const res = await fetch(endpoint);
   if (!res.ok) {
     const text = await res.text();
@@ -91,24 +76,9 @@ export async function getSessions(params?: { limit?: number }) {
   return await res.json();
 }
 
-export async function touchSession(params: { url: string }) {
+export async function deleteSession(params: { sessionId: string }) {
   const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/sessions/touch`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Sessions touch failed (${res.status}) @ ${endpoint}: ${text}`);
-  }
-  return await res.json();
-}
-
-export async function deleteSession(params: { url: string }) {
-  const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/sessions?url=${encodeURIComponent(params.url)}`;
+  const endpoint = `${base}/sessions?sessionId=${encodeURIComponent(params.sessionId)}`;
   const res = await fetch(endpoint, { method: "DELETE" });
   if (!res.ok) {
     const text = await res.text();

@@ -4,15 +4,14 @@ import {
   deleteSession,
   downloadNotesDocx,
   getTopics,
-  selectTopics,
+  startSession,
   getNotes,
   getSessions,
-  resetNotes,
-  touchSession,
 } from "../lib/api";
 import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
 
 type Notes = {
+  sessionId: string;
   url: string;
   summary: string;
   qa: Array<{ q: string; a: string }>;
@@ -26,6 +25,7 @@ type Notes = {
 };
 
 type SessionItem = {
+  sessionId: string;
   url: string;
   title: string;
   updatedAt: string;
@@ -55,6 +55,7 @@ function safeTitleFromUrl(u: string): string {
 
 export function App() {
   const [url, setUrl] = useState<string>("");
+  const [sessionId, setSessionId] = useState<string>("");
   const [status, setStatus] = useState<string>(
     "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
   );
@@ -87,8 +88,9 @@ export function App() {
         const items = Array.isArray(res?.sessions) ? res.sessions : [];
         setSessions(
           items
-            .filter((x: any) => x?.url)
+            .filter((x: any) => x?.url && x?.sessionId)
             .map((x: any) => ({
+              sessionId: String(x.sessionId),
               url: String(x.url),
               title: safeTitleFromUrl(String(x.url)),
               updatedAt: String(x.updatedAt || ""),
@@ -103,13 +105,13 @@ export function App() {
 
   useEffect(() => {
     if (!isNotesAutoRefresh) return;
-    const u = url.trim();
-    if (!u) return;
+    const sid = sessionId.trim();
+    if (!sid) return;
 
     let cancelled = false;
     const tick = async () => {
       try {
-        const data = (await getNotes({ url: u })) as Notes;
+        const data = (await getNotes({ sessionId: sid })) as Notes;
         if (!cancelled) setNotes(data);
       } catch {
         // ignore transient errors during deploys
@@ -122,7 +124,7 @@ export function App() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [isNotesAutoRefresh, url]);
+  }, [isNotesAutoRefresh, sessionId]);
 
   function openPage() {
     const u = url.trim();
@@ -162,10 +164,11 @@ export function App() {
       setIsLoadingTopics(true);
       setTopics(null);
       setSelectedTopics([]);
+      setSessionId("");
       setStatus("Fetching topics…");
       const t = (await getTopics({ url: u })) as TopicsResponse;
       setTopics(t);
-      setStatus("Topics loaded. Select up to 5 topics, then click Start session.");
+      setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
     } catch (e: any) {
       setStatus(`Topics error: ${e?.message || String(e)}`);
     } finally {
@@ -180,40 +183,41 @@ export function App() {
         return;
       }
       if (selectedTopics.length === 0) {
-        setStatus("Select at least 1 topic (up to 5), then start the session.");
+        setStatus("Select at least 1 topic (up to 8), then start the session.");
         return;
       }
       setIsStartingSession(true);
       const u = url.trim();
-      await resetNotes({ url: u });
-      setNotes(null);
       setTopics(null);
       setIsNotesAutoRefresh(true);
       setStatus(
-        "Session started.\n\nNext: Start the call (below), paste the URL into the conversation, and say “analyze this”.\nThe agent should call your /extract tool and then save notes via set_summary / append_qa / append_quiz."
+        "Session started.\n\nNext: Start the call (below), paste the URL into the conversation, and say “analyze”.\nThe agent should confirm your selected topics, then begin Topic 1 and write notes via set_summary / append_qa / append_quiz."
       );
 
       try {
-        await selectTopics({ url: u, topics: selectedTopics });
+        const sess = await startSession({ url: u, selectedTopics });
+        setSessionId(String(sess?.sessionId || ""));
+        // Load notes once immediately
+        try {
+          const n = (await getNotes({ sessionId: String(sess?.sessionId || "") })) as Notes;
+          setNotes(n);
+        } catch {
+          setNotes(null);
+        }
       } catch {
         // ignore (call can still proceed)
       }
 
       openPage();
 
-      // Bump session in backend + refresh list
-      try {
-        await touchSession({ url: u });
-      } catch {
-        // ignore
-      }
       try {
         const res = await getSessions({ limit: 50 });
         const items = Array.isArray(res?.sessions) ? res.sessions : [];
         setSessions(
           items
-            .filter((x: any) => x?.url)
+            .filter((x: any) => x?.url && x?.sessionId)
             .map((x: any) => ({
+              sessionId: String(x.sessionId),
               url: String(x.url),
               title: safeTitleFromUrl(String(x.url)),
               updatedAt: String(x.updatedAt || ""),
@@ -230,7 +234,14 @@ export function App() {
   }
 
   async function onSelectSession(u: string) {
-    setUrl(u);
+    // legacy signature kept; now expects encoded "sessionId|url"
+    const [sid, urlPart] = u.split("|", 2);
+    const realSid = (sid || "").trim();
+    const realUrl = (urlPart || "").trim();
+    if (!realSid || !realUrl) return;
+
+    setSessionId(realSid);
+    setUrl(realUrl);
     setIsNotesAutoRefresh(true);
     setStatus("Loading notes…");
     // Helpful: open the URL so the user can read alongside the notes/call.
@@ -248,19 +259,19 @@ export function App() {
         `left=${left}`,
         `top=${top}`,
       ].join(",");
-      const opened = window.open(u, "_blank", features);
-      if (!opened) window.open(u, "_blank", "noopener,noreferrer");
+      const opened = window.open(realUrl, "_blank", features);
+      if (!opened) window.open(realUrl, "_blank", "noopener,noreferrer");
     } catch {
       // ignore
     }
     try {
-      await touchSession({ url: u });
       const res = await getSessions({ limit: 50 });
       const items = Array.isArray(res?.sessions) ? res.sessions : [];
       setSessions(
         items
-          .filter((x: any) => x?.url)
+          .filter((x: any) => x?.url && x?.sessionId)
           .map((x: any) => ({
+            sessionId: String(x.sessionId),
             url: String(x.url),
             title: safeTitleFromUrl(String(x.url)),
             updatedAt: String(x.updatedAt || ""),
@@ -270,7 +281,7 @@ export function App() {
       // ignore
     }
     try {
-      const data = (await getNotes({ url: u })) as Notes;
+      const data = (await getNotes({ sessionId: realSid })) as Notes;
       setNotes(data);
       setStatus("Notes loaded.");
     } catch (e: any) {
@@ -279,8 +290,11 @@ export function App() {
   }
 
   async function onDeleteSession(u: string) {
+    const [sid] = u.split("|", 1);
+    const realSid = (sid || "").trim();
+    if (!realSid) return;
     try {
-      await deleteSession({ url: u });
+      await deleteSession({ sessionId: realSid });
     } catch {
       // ignore
     }
@@ -289,8 +303,9 @@ export function App() {
       const items = Array.isArray(res?.sessions) ? res.sessions : [];
       setSessions(
         items
-          .filter((x: any) => x?.url)
+          .filter((x: any) => x?.url && x?.sessionId)
           .map((x: any) => ({
+            sessionId: String(x.sessionId),
             url: String(x.url),
             title: safeTitleFromUrl(String(x.url)),
             updatedAt: String(x.updatedAt || ""),
@@ -298,10 +313,11 @@ export function App() {
       );
     } catch {
       // ignore
-      setSessions((prev) => prev.filter((x) => x.url !== u));
+      setSessions((prev) => prev.filter((x) => x.sessionId !== realSid));
     }
-    if (url.trim() === u) {
+    if (sessionId.trim() === realSid) {
       setUrl("");
+      setSessionId("");
       setNotes(null);
       setTopics(null);
       setSelectedTopics([]);
@@ -314,13 +330,13 @@ export function App() {
 
   async function onRefreshNotes() {
     try {
-      const u = url.trim();
-      if (!u) {
-        setStatus("Paste a URL first (notes are saved per URL).");
+      const sid = sessionId.trim();
+      if (!sid) {
+        setStatus("Start/select a session first.");
         return;
       }
       setStatus("Refreshing notes…");
-      const data = (await getNotes({ url: u })) as Notes;
+      const data = (await getNotes({ sessionId: sid })) as Notes;
       setNotes(data);
       setStatus("Notes refreshed.");
     } catch (e: any) {
@@ -330,13 +346,13 @@ export function App() {
 
   async function onDownloadNotes() {
     try {
-      const u = url.trim();
-      if (!u) {
-        setStatus("Paste a URL first (notes are saved per URL).");
+      const sid = sessionId.trim();
+      if (!sid) {
+        setStatus("Start/select a session first.");
         return;
       }
       setStatus("Preparing notes download…");
-      await downloadNotesDocx({ url: u });
+      await downloadNotesDocx({ sessionId: sid });
       setStatus("Downloaded notes (study-notes.docx).");
     } catch (e: any) {
       setStatus(`Download notes error: ${e?.message || String(e)}`);
@@ -355,24 +371,25 @@ export function App() {
               </div>
             ) : null}
             {sessions.map((s) => {
-              const active = url.trim() === s.url;
+              const key = `${s.sessionId}|${s.url}`;
+              const active = sessionId.trim() === s.sessionId;
               return (
                 <div
-                  key={s.url}
+                  key={key}
                   className={`sessionItem ${active ? "active" : ""}`}
-                  onClick={() => onSelectSession(s.url)}
+                  onClick={() => onSelectSession(key)}
                   role="button"
                   tabIndex={0}
                 >
                   <div className="sessionItemTop">
                     <div className="sessionTitle" title={s.url}>
-                      {s.title}
+                      {s.title} <span className="muted">({s.sessionId.slice(0, 8)})</span>
                     </div>
                     <button
                       className="sessionDelete"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDeleteSession(s.url);
+                        onDeleteSession(key);
                       }}
                       aria-label="Delete session"
                       type="button"
@@ -457,12 +474,12 @@ export function App() {
                 ) : null}
                 <div style={{ marginTop: 10 }}>
                   <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                    Select up to <strong>5</strong> topics for today’s session.
+                    Select up to <strong>8</strong> topics for today’s session.
                   </div>
                   {topics.topics.slice(0, 40).map((t, i) => {
                     const indent = Math.max(0, Math.min(3, (t.level || 2) - 2)) * 12;
                     const checked = selectedTopics.includes(t.title);
-                    const disabled = !checked && selectedTopics.length >= 5;
+                    const disabled = !checked && selectedTopics.length >= 8;
                     return (
                       <label
                         key={`${t.title}-${i}`}
@@ -486,7 +503,7 @@ export function App() {
                             const on = e.target.checked;
                             setSelectedTopics((prev) => {
                               if (on) {
-                                if (prev.includes(t.title) || prev.length >= 5) return prev;
+                                if (prev.includes(t.title) || prev.length >= 8) return prev;
                                 return [...prev, t.title];
                               }
                               return prev.filter((x) => x !== t.title);

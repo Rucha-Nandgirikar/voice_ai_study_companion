@@ -21,16 +21,18 @@ This repo contains:
 - `GET /health`
 - `POST /extract` (agent tool: fetch + extract content server-side from a pasted URL)
 - `POST /topics` (UI: list headings/topics from a pasted URL)
-- `POST /topics/select` (UI: save up to 5 selected topics for today)
-- `GET /topics/selected?url=...` (agent: read today’s selected topics)
+- `POST /sessions/start` (UI: create a new study session for this URL with selected topics)
+- `GET /sessions` (UI: list sessions for the left sidebar)
+- `GET /sessions/latest?url=...` (agent: find the latest session for that URL, including selected topics)
 - Notes (MVP; in-memory):
-  - `POST /notes/reset` (start notes for a URL)
+  - `GET /notes?sessionId=...` (fetch notes for a session)
+  - `POST /notes/reset` (reset notes for a session)
   - `POST /notes/set_summary` (agent saves a summary)
   - `POST /notes/append_qa` (agent saves a Q&A pair)
   - `POST /notes/append_quiz` (agent saves a quiz item with feedback)
   - (optional) `POST /notes/append_turn` (raw transcript turns)
   - (legacy) `POST /notes/append_question`
-  - `GET /notes/download.docx?url=...` (download notes as a Word document)
+  - `GET /notes/download.docx?sessionId=...` (download notes as a Word document)
 
 Notes:
 - `/topics` is best-effort: it reads page structure (headings / markdown headings). Some pages may have weak/empty headings.
@@ -65,20 +67,21 @@ Also ensure the Cloud Run runtime service account has the **Cloud SQL Client** r
 Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
 
 - `fetch_page_content(url)` → calls `POST /extract`
-- `get_selected_topics(url)` → calls `GET /topics/selected?url=...`
-- `set_selected_topics(url, topics[])` → calls `POST /topics/select`
-- `set_summary(url, summary)` → calls `POST /notes/set_summary`
-- `append_qa(url, question, answer)` → calls `POST /notes/append_qa` (recommended)
-- `append_quiz(url, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
-- (optional) `append_turn(url, role, text)` → calls `POST /notes/append_turn` (raw transcript)
+- `get_latest_session(url)` → calls `GET /sessions/latest?url=...` and returns `sessionId` + selected topics
+- `set_summary(sessionId, summary)` → calls `POST /notes/set_summary`
+- `append_qa(sessionId, question, answer)` → calls `POST /notes/append_qa` (recommended)
+- `append_quiz(sessionId, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
+- (optional) `append_turn(sessionId, role, text)` → calls `POST /notes/append_turn` (raw transcript)
 
 Then tell the agent in its system prompt:
-- When a user provides a URL / says “analyze”, call `fetch_page_content(url)` first.
-- At call start (or when user says “analyze” / is silent), call `get_selected_topics(url)` and confirm:
-  “Today, would you like to study topics 1–5: …?” If confirmed, begin with Topic 1.
-- After summarizing, call `set_summary(url, summary)`.
-- When the user asks a question and you answer it, call `append_qa(url, question, answer)`.
-- When you run a quiz, call `append_quiz(...)` with the prompt and feedback.
+- At call start (or when user says “analyze” / is silent):
+  - Read the URL from the user message
+  - Call `get_latest_session(url)` to get `sessionId` + the selected topics
+  - Confirm: “Today, would you like to study topics 1–8: …?” If confirmed, begin with Topic 1.
+- When you need page content for a topic, call `fetch_page_content(url)` (and/or chunking endpoints later).
+- After summarizing a topic/block, call `set_summary(sessionId, summary)` (you can append/overwrite depending on your prompt).
+- When the user asks a question and you answer it, call `append_qa(sessionId, question, answer)`.
+- When you run a quiz, call `append_quiz(sessionId, ...)` with the prompt and feedback.
 
 ### Session memory (MVP)
 
