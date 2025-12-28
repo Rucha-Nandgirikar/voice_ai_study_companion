@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from io import BytesIO
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException
@@ -20,6 +21,9 @@ from backend.schemas import (
     ExtractPart,
     SummarizeRequest,
     SummarizeResponse,
+    TopicsRequest,
+    TopicsResponse,
+    TopicItem,
     NotesAppendQuestionRequest,
     NotesAppendTurnRequest,
     NotesAppendQARequest,
@@ -31,11 +35,16 @@ from backend.schemas import (
     SessionsListResponse,
 )
 from backend.notes_repo import PostgresNotesRepo, make_notes_repo
-from backend.url_extract import fetch_and_extract_main_text
-from backend.gemini_api import GeminiError, gemini_generate_text, get_gemini_model
+from backend.url_extract import fetch_and_extract_main_text, fetch_and_extract_topics
+from backend.gemini_api import GeminiError, GeminiRateLimitError, gemini_generate_text, get_gemini_model
 
 
+# Local dev convenience:
+# - If you run from repo root, `.env` is loaded.
+# - If you run from inside `backend/` (or other CWD), `backend/.env` is also loaded.
+# Cloud Run should use real env vars / Secret Manager (it will not have your local .env file).
 load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
 app = FastAPI(title="Voice AI Study Companion API", version="0.2.0")
 notes_repo = make_notes_repo()
 
@@ -55,6 +64,7 @@ def root() -> dict:
         "endpoints": [
             "/health",
             "/extract",
+            "/topics",
             "/summarize",
             "/sessions",
             "/sessions/touch",
@@ -242,6 +252,20 @@ async def extract_parts(req: ExtractPartsRequest) -> ExtractPartsResponse:
         raise HTTPException(status_code=500, detail=f"Extract parts failed: {e}")
 
 
+@app.post("/topics", response_model=TopicsResponse)
+async def topics(req: TopicsRequest) -> TopicsResponse:
+    """
+    Best-effort topic listing from the page structure (headings / markdown headings).
+    This endpoint does NOT call an LLM; it is cheap and fast.
+    """
+    try:
+        title, topics_pairs = await fetch_and_extract_topics(req.url)
+        topics_items = [TopicItem(level=lvl, title=t) for (lvl, t) in topics_pairs]
+        return TopicsResponse(url=req.url, title=title, topics=topics_items)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Topics failed: {e}")
+
+
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize(req: SummarizeRequest) -> SummarizeResponse:
     """
@@ -297,6 +321,8 @@ async def summarize(req: SummarizeRequest) -> SummarizeResponse:
             truncated=truncated,
             totalChars=len(text),
         )
+    except GeminiRateLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
     except GeminiError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:

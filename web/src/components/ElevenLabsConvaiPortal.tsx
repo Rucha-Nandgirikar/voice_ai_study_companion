@@ -12,10 +12,12 @@ export function ElevenLabsConvaiPortal({ agentId }: Props) {
     setMounted(true);
   }, []);
 
-  // Render directly under <body> to avoid CSS/stacking-context issues (e.g. backdrop-filter)
-  // that can break fixed-position widgets when nested inside containers.
   if (!mounted) return null;
-  return createPortal(<elevenlabs-convai agent-id={agentId}></elevenlabs-convai>, document.body);
+
+  // Prefer a dedicated mount point (lets us "center" the widget in the UI).
+  // Fall back to <body> to avoid CSS/stacking-context issues when needed.
+  const root = document.getElementById("convai-root") ?? document.body;
+  return createPortal(<elevenlabs-convai agent-id={agentId}></elevenlabs-convai>, root);
 }
 
 

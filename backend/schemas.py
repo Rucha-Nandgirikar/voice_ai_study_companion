@@ -203,4 +203,19 @@ class SummarizeResponse(BaseModel):
     totalChars: int | None = None
 
 
+class TopicsRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public URL to fetch and extract topic headings from")
+
+
+class TopicItem(BaseModel):
+    level: int = Field(..., ge=1, le=6, description="Heading level (1-6)")
+    title: str = Field(..., min_length=1)
+
+
+class TopicsResponse(BaseModel):
+    url: str
+    title: str | None = None
+    topics: list[TopicItem] = Field(default_factory=list)
+
+
 

@@ -20,6 +20,21 @@ export async function extractUrl(params: { url: string }) {
   return await res.json();
 }
 
+export async function getTopics(params: { url: string }) {
+  const base = originOnly(BACKEND_URL);
+  const endpoint = `${base}/topics`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Topics failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
 export async function summarizeUrl(params: { url: string; parts?: number; maxCharsPerPart?: number }) {
   const base = originOnly(BACKEND_URL);
   const endpoint = `${base}/summarize`;

@@ -16,6 +16,126 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
+def _clean_heading(text: str) -> str:
+    t = _clean_text(text)
+    # remove excessive punctuation / separators
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    t = t.strip(" \t-–—|•")
+    return t
+
+
+def _parse_markdown_headings(text: str) -> list[tuple[int, str]]:
+    """
+    Parses simple markdown headings:
+      # H1 -> level 1
+      ## H2 -> level 2
+      ### H3 -> level 3
+    Returns list of (level, title).
+    """
+    out: list[tuple[int, str]] = []
+    if not text:
+        return out
+    for line in text.splitlines():
+        m = re.match(r"^(#{1,6})\s+(.+?)\s*$", line)
+        if not m:
+            continue
+        level = len(m.group(1))
+        title = _clean_heading(m.group(2))
+        if not title:
+            continue
+        out.append((level, title))
+    return out
+
+
+def _dedupe_keep_order(items: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    seen: set[str] = set()
+    out: list[tuple[int, str]] = []
+    for level, title in items:
+        key = title.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((level, title))
+    return out
+
+
+async def fetch_and_extract_topics(url: str) -> tuple[str | None, list[tuple[int, str]]]:
+    """
+    Returns (title, topics) where topics are best-effort headings/sections.
+    This is intentionally heuristic and does NOT require an LLM.
+    """
+    # GitHub raw shortcut (often markdown)
+    gh_text = await _try_github_raw(url)
+    if gh_text:
+        topics = _parse_markdown_headings(gh_text)
+        topics = _dedupe_keep_order(topics)
+        title = topics[0][1] if topics and topics[0][0] == 1 else None
+        # Drop the top-level title from topics list (keep it as page title)
+        if topics and topics[0][0] == 1:
+            topics = topics[1:]
+        # Keep only reasonably sized set for UI
+        return title, topics[:80]
+
+    # YouTube transcript: no reliable headings without an LLM; return a single topic.
+    yt_text = _try_youtube_transcript(url)
+    if yt_text:
+        return "YouTube transcript", [(2, "Transcript overview")]
+
+    async with httpx.AsyncClient(
+        timeout=20,
+        follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; VoiceAIStudyCompanion/1.0)"},
+    ) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        html = r.text
+
+    # Prefer Readability extracted HTML, then scrape headings from it.
+    title: str | None = None
+    headings: list[tuple[int, str]] = []
+    try:
+        doc = Document(html)
+        try:
+            title = _clean_heading(doc.short_title() or "")
+            if not title:
+                title = None
+        except Exception:
+            title = None
+
+        content_html = doc.summary(html_partial=True)
+        soup = BeautifulSoup(content_html, "html.parser")
+        for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+            lvl = int(tag.name[1])
+            t = _clean_heading(tag.get_text(" "))
+            if t:
+                headings.append((lvl, t))
+    except Exception:
+        pass
+
+    # Fallback: scrape headings from full HTML after stripping noisy tags.
+    if not headings:
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside", "form"]):
+            tag.decompose()
+        if not title:
+            t = soup.title.get_text(" ") if soup.title else ""
+            title = _clean_heading(t) or None
+        for tag in soup.find_all(["h1", "h2", "h3"]):
+            lvl = int(tag.name[1])
+            t = _clean_heading(tag.get_text(" "))
+            if t:
+                headings.append((lvl, t))
+
+    headings = _dedupe_keep_order(headings)
+    # Avoid returning huge lists
+    headings = headings[:80]
+    # If we accidentally include title as H1, drop it (keep title separately).
+    if headings and title and headings[0][0] == 1 and headings[0][1].lower() == title.lower():
+        headings = headings[1:]
+
+    return title, headings
+
+
 def _is_github(host: str) -> bool:
     host = (host or "").lower()
     return host == "github.com" or host.endswith(".github.com")

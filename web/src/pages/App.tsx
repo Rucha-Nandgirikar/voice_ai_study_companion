@@ -3,11 +3,10 @@ import { AGENT_ID } from "../lib/config";
 import {
   deleteSession,
   downloadNotesDocx,
-  extractUrl,
+  getTopics,
   getNotes,
   getSessions,
   resetNotes,
-  summarizeUrl,
   touchSession,
 } from "../lib/api";
 import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
@@ -31,6 +30,17 @@ type SessionItem = {
   updatedAt: string;
 };
 
+type TopicItem = {
+  level: number;
+  title: string;
+};
+
+type TopicsResponse = {
+  url: string;
+  title?: string | null;
+  topics: TopicItem[];
+};
+
 function safeTitleFromUrl(u: string): string {
   try {
     const url = new URL(u);
@@ -45,13 +55,13 @@ function safeTitleFromUrl(u: string): string {
 export function App() {
   const [url, setUrl] = useState<string>("");
   const [status, setStatus] = useState<string>(
-    "Paste a URL, click Analyze, then start a call with the ElevenLabs Agent (bottom-right) for a spoken summary and Gemini-powered tutoring, quizzes, etc."
+    "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
   );
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [preview, setPreview] = useState<string>("");
+  const [isStartingSession, setIsStartingSession] = useState(false);
   const [notes, setNotes] = useState<Notes | null>(null);
   const [isNotesAutoRefresh, setIsNotesAutoRefresh] = useState(false);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
+  const [topics, setTopics] = useState<TopicsResponse | null>(null);
 
   useEffect(() => {
     // Load ElevenLabs widget embed script once.
@@ -139,30 +149,30 @@ export function App() {
     }
   }
 
-  async function onAnalyze() {
+  async function onStartSession() {
     try {
       if (!url.trim()) {
         setStatus("Please paste a URL first.");
         return;
       }
-      setIsAnalyzing(true);
+      setIsStartingSession(true);
       const u = url.trim();
       await resetNotes({ url: u });
       setNotes(null);
+      setTopics(null);
       setIsNotesAutoRefresh(true);
-      setStatus("Extracting main content…");
-      const data = await extractUrl({ url: u });
-      const cleaned = (data?.cleanedText || "") as string;
-      setPreview(cleaned.slice(0, 600));
-      setStatus("Summarizing (Gemini)…");
-      await summarizeUrl({ url: u, parts: 4, maxCharsPerPart: 9000 });
+      setStatus(
+        "Session started.\n\nNext: Start the call (below), paste the URL into the conversation, and say “analyze this”.\nThe agent should call your /extract tool and then save notes via set_summary / append_qa / append_quiz."
+      );
+
+      // Fetch a cheap topic list (no LLM) so the student sees what's inside the page.
       try {
-        const n = (await getNotes({ url: u })) as Notes;
-        setNotes(n);
+        const t = (await getTopics({ url: u })) as TopicsResponse;
+        setTopics(t);
       } catch {
-        // ignore
+        // ignore (some pages have no headings / block bots)
       }
-      setStatus("Summary ready. You can still start a call for tutoring/quizzes.");
+
       openPage();
 
       // Bump session in backend + refresh list
@@ -187,9 +197,9 @@ export function App() {
         // ignore
       }
     } catch (e: any) {
-      setStatus(`Analyze error: ${e?.message || String(e)}`);
+      setStatus(`Start session error: ${e?.message || String(e)}`);
     } finally {
-      setIsAnalyzing(false);
+      setIsStartingSession(false);
     }
   }
 
@@ -267,10 +277,10 @@ export function App() {
     if (url.trim() === u) {
       setUrl("");
       setNotes(null);
-      setPreview("");
+      setTopics(null);
       setIsNotesAutoRefresh(false);
       setStatus(
-        "Paste a URL, click Analyze, then start a call with the ElevenLabs Agent (bottom-right) for a spoken summary and Gemini-powered tutoring, quizzes, etc."
+        "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
       );
     }
   }
@@ -372,8 +382,8 @@ export function App() {
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://…"
                 />
-                <button onClick={onAnalyze} disabled={isAnalyzing}>
-                  {isAnalyzing ? "Analyzing…" : "Analyze"}
+                <button onClick={onStartSession} disabled={isStartingSession}>
+                  {isStartingSession ? "Starting…" : "Start session"}
                 </button>
                 <button className="secondary" onClick={onDownloadNotes} disabled={!url.trim()}>
                   Download notes
@@ -381,19 +391,57 @@ export function App() {
                 <button className="secondary" onClick={onRefreshNotes} disabled={!url.trim()}>
                   Refresh notes
                 </button>
-                {/* <button className="secondary" onClick={openPage} disabled={!url.trim()}>
-                  Open page
-                </button> */}
               </div>
               <div className="status">{status}</div>
             </div>
 
-            {preview && (
+            <div className="card callCard" style={{ marginTop: 12 }}>
+              <div style={{ fontWeight: 800, marginBottom: 6, textAlign: "center" }}>Start the call</div>
+              {!AGENT_ID ? (
+                <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
+                  Missing <code>VITE_AGENT_ID</code>. Set it in <code>web/.env</code> (local) or Vercel env vars.
+                </div>
+              ) : (
+                <>
+                  <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
+                    Tip: In the call, paste the URL and say “analyze”. Notes will update here automatically.
+                  </div>
+                  <div id="convai-root" className="convaiRoot" />
+                  <ElevenLabsConvaiPortal agentId={AGENT_ID} />
+                </>
+              )}
+            </div>
+
+            {topics?.topics?.length ? (
               <div className="card" style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>Extract preview</div>
-                <div style={{ fontSize: 13, lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{preview}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+                  <div style={{ fontWeight: 800 }}>Topics on this page</div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    (best-effort from headings)
+                  </div>
+                </div>
+                {topics.title ? (
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                    Title: <code>{topics.title}</code>
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 10 }}>
+                  {topics.topics.slice(0, 40).map((t, i) => {
+                    const indent = Math.max(0, Math.min(3, (t.level || 2) - 2)) * 12;
+                    return (
+                      <div key={`${t.title}-${i}`} style={{ fontSize: 13, lineHeight: 1.4, marginBottom: 6, paddingLeft: indent }}>
+                        - {t.title}
+                      </div>
+                    );
+                  })}
+                  {topics.topics.length > 40 ? (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                      Showing first 40 topics.
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            )}
+            ) : null}
 
             <div className="card" style={{ marginTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -470,27 +518,6 @@ export function App() {
             </div>
           </div>
         </main>
-      </div>
-
-      <div className="bottomBar">
-        <div className="bottomInner">
-          {!AGENT_ID ? (
-            <div className="msg">
-              {/* <strong>Missing VITE_AGENT_ID.</strong> Set it in <code>web/.env</code> (local) or Vercel env vars. */}
-              <div className="muted" style={{ marginTop: 6 }}>
-                Debug: <code>import.meta.env.VITE_AGENT_ID</code> is{" "}
-                <code>{String(import.meta.env.VITE_AGENT_ID || "") || "(empty)"}</code>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="msg">
-                <strong>Call widget:</strong> look for the floating ElevenLabs call button (bottom-right).
-              </div>
-              <ElevenLabsConvaiPortal agentId={AGENT_ID} />
-            </>
-          )}
-        </div>
       </div>
     </div>
   );
