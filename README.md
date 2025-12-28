@@ -16,10 +16,11 @@ This repo contains:
 
 ## Backend API (FastAPI)
 
-### Endpoints (Option B: agent does all LLM)
+### Endpoints
 
 - `GET /health`
 - `POST /extract` (fetch + extract content server-side from a pasted URL)
+- `POST /summarize` (fetch + extract + split into parts + **Gemini** summary; stores in notes)
 - Notes (MVP; in-memory):
   - `POST /notes/reset` (start notes for a URL)
   - `POST /notes/set_summary` (agent saves a summary)
@@ -31,6 +32,25 @@ This repo contains:
 
 Notes:
 - For **YouTube URLs**, `/extract` will try to fetch a transcript (only works if captions are available). If unavailable, it falls back to regular HTML extraction.
+
+### Gemini API key (for `/summarize`)
+If you want the **Analyze** button to produce a summary *without starting a voice call*, set one of:
+
+```text
+GEMINI_API_KEY=...
+```
+
+or:
+
+```text
+GOOGLE_API_KEY=...
+```
+
+Optional:
+
+```text
+GEMINI_MODEL=gemini-2.0-flash
+```
 
 ### Optional: Persist notes in Postgres (Cloud SQL)
 By default notes are stored **in-memory** (they reset if Cloud Run restarts). To persist notes:

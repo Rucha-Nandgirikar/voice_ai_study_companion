@@ -1,6 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { AGENT_ID } from "../lib/config";
-import { deleteSession, downloadNotesDocx, extractUrl, getNotes, getSessions, resetNotes, touchSession } from "../lib/api";
+import {
+  deleteSession,
+  downloadNotesDocx,
+  extractUrl,
+  getNotes,
+  getSessions,
+  resetNotes,
+  summarizeUrl,
+  touchSession,
+} from "../lib/api";
 import { ElevenLabsConvaiPortal } from "../components/ElevenLabsConvaiPortal";
 
 type Notes = {
@@ -109,8 +118,25 @@ export function App() {
       return;
     }
     // Opening in the same tab would navigate away from the app (and the widget).
-    // New tab lets the user read while the call UI stays open.
-    window.open(u, "_blank", "noopener,noreferrer");
+    // A separate window lets the user arrange the page side-by-side with this app.
+    const w = Math.min(1100, Math.max(900, window.screen.availWidth - 120));
+    const h = Math.min(900, Math.max(700, window.screen.availHeight - 160));
+    const left = Math.max(20, Math.round((window.screen.availWidth - w) / 2));
+    const top = Math.max(20, Math.round((window.screen.availHeight - h) / 3));
+    const features = [
+      "noopener",
+      "noreferrer",
+      "popup=1",
+      `width=${w}`,
+      `height=${h}`,
+      `left=${left}`,
+      `top=${top}`,
+    ].join(",");
+    const opened = window.open(u, "_blank", features);
+    if (!opened) {
+      // Popup blocker fallback.
+      window.open(u, "_blank", "noopener,noreferrer");
+    }
   }
 
   async function onAnalyze() {
@@ -128,9 +154,15 @@ export function App() {
       const data = await extractUrl({ url: u });
       const cleaned = (data?.cleanedText || "") as string;
       setPreview(cleaned.slice(0, 600));
-      setStatus(
-        "Extracted! Now use the ElevenLabs widget below and say: “Summarize this page.”\n\nTip: If your agent has a tool, ask it to ‘fetch and summarize’ this URL."
-      );
+      setStatus("Summarizing (Gemini)…");
+      await summarizeUrl({ url: u, parts: 4, maxCharsPerPart: 9000 });
+      try {
+        const n = (await getNotes({ url: u })) as Notes;
+        setNotes(n);
+      } catch {
+        // ignore
+      }
+      setStatus("Summary ready. You can still start a call for tutoring/quizzes.");
       openPage();
 
       // Bump session in backend + refresh list
@@ -165,6 +197,26 @@ export function App() {
     setUrl(u);
     setIsNotesAutoRefresh(true);
     setStatus("Loading notes…");
+    // Helpful: open the URL so the user can read alongside the notes/call.
+    try {
+      const w = Math.min(1100, Math.max(900, window.screen.availWidth - 120));
+      const h = Math.min(900, Math.max(700, window.screen.availHeight - 160));
+      const left = Math.max(20, Math.round((window.screen.availWidth - w) / 2));
+      const top = Math.max(20, Math.round((window.screen.availHeight - h) / 3));
+      const features = [
+        "noopener",
+        "noreferrer",
+        "popup=1",
+        `width=${w}`,
+        `height=${h}`,
+        `left=${left}`,
+        `top=${top}`,
+      ].join(",");
+      const opened = window.open(u, "_blank", features);
+      if (!opened) window.open(u, "_blank", "noopener,noreferrer");
+    } catch {
+      // ignore
+    }
     try {
       await touchSession({ url: u });
       const res = await getSessions({ limit: 50 });

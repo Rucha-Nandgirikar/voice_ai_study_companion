@@ -66,11 +66,65 @@ class ElevenLabsSignedUrlResponse(BaseModel):
 
 class ExtractRequest(BaseModel):
     url: str = Field(..., min_length=1, description="Public URL to fetch and extract server-side")
+    maxChars: int | None = Field(
+        None,
+        ge=500,
+        le=200_000,
+        description="Optional hard limit for returned cleanedText character count (prevents tool payloads from being too large).",
+    )
 
 
 class ExtractResponse(BaseModel):
     url: str
     cleanedText: str
+    truncated: bool = False
+    totalChars: int | None = None
+    title: str | None = None
+
+
+class ExtractChunkRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public URL to fetch and extract server-side")
+    offset: int = Field(0, ge=0, description="Character offset into the extracted text")
+    maxChars: int = Field(
+        12000,
+        ge=500,
+        le=200_000,
+        description="Maximum number of characters to return for this chunk",
+    )
+
+
+class ExtractChunkResponse(BaseModel):
+    url: str
+    offset: int
+    chunk: str
+    nextOffset: int | None = None
+    totalChars: int | None = None
+
+
+class ExtractPartsRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public URL to fetch and extract server-side")
+    parts: int = Field(4, ge=2, le=12, description="Number of parts to split into (default 4)")
+    maxCharsPerPart: int = Field(
+        9000,
+        ge=500,
+        le=200_000,
+        description="Hard limit for each part's character count (prevents oversized tool payloads).",
+    )
+
+
+class ExtractPart(BaseModel):
+    index: int = Field(..., ge=1, description="1-based part index")
+    totalParts: int = Field(..., ge=1, description="Total number of parts")
+    offset: int = Field(..., ge=0, description="Character offset into the full extracted text")
+    text: str
+
+
+class ExtractPartsResponse(BaseModel):
+    url: str
+    title: str | None = None
+    parts: list[ExtractPart]
+    truncated: bool = False
+    totalChars: int | None = None
 
 
 class NotesResetRequest(BaseModel):
@@ -128,6 +182,25 @@ class SessionsListResponse(BaseModel):
 
 class SessionTouchRequest(BaseModel):
     url: str = Field(..., min_length=1)
+
+
+class SummarizeRequest(BaseModel):
+    url: str = Field(..., min_length=1, description="Public URL to fetch/extract and summarize server-side")
+    parts: int = Field(4, ge=2, le=12, description="Number of parts to split into (default 4)")
+    maxCharsPerPart: int = Field(
+        9000,
+        ge=500,
+        le=200_000,
+        description="Hard limit for each part's character count (prevents oversized model inputs).",
+    )
+
+
+class SummarizeResponse(BaseModel):
+    url: str
+    summary: str
+    model: str | None = None
+    truncated: bool = False
+    totalChars: int | None = None
 
 
 
