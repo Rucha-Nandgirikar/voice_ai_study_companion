@@ -19,8 +19,10 @@ This repo contains:
 ### Endpoints
 
 - `GET /health`
-- `POST /extract` (fetch + extract content server-side from a pasted URL)
-- `POST /summarize` (fetch + extract + split into parts + **Gemini** summary; stores in notes)
+- `POST /extract` (agent tool: fetch + extract content server-side from a pasted URL)
+- `POST /topics` (UI: list headings/topics from a pasted URL)
+- `POST /topics/select` (UI: save up to 5 selected topics for today)
+- `GET /topics/selected?url=...` (agent: read today’s selected topics)
 - Notes (MVP; in-memory):
   - `POST /notes/reset` (start notes for a URL)
   - `POST /notes/set_summary` (agent saves a summary)
@@ -31,26 +33,7 @@ This repo contains:
   - `GET /notes/download.docx?url=...` (download notes as a Word document)
 
 Notes:
-- For **YouTube URLs**, `/extract` will try to fetch a transcript (only works if captions are available). If unavailable, it falls back to regular HTML extraction.
-
-### Gemini API key (for `/summarize`)
-If you want the **Analyze** button to produce a summary *without starting a voice call*, set one of:
-
-```text
-GEMINI_API_KEY=...
-```
-
-or:
-
-```text
-GOOGLE_API_KEY=...
-```
-
-Optional:
-
-```text
-GEMINI_MODEL=gemini-2.0-flash
-```
+- `/topics` is best-effort: it reads page structure (headings / markdown headings). Some pages may have weak/empty headings.
 
 ### Optional: Persist notes in Postgres (Cloud SQL)
 By default notes are stored **in-memory** (they reset if Cloud Run restarts). To persist notes:
@@ -82,6 +65,8 @@ Also ensure the Cloud Run runtime service account has the **Cloud SQL Client** r
 Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
 
 - `fetch_page_content(url)` → calls `POST /extract`
+- `get_selected_topics(url)` → calls `GET /topics/selected?url=...`
+- `set_selected_topics(url, topics[])` → calls `POST /topics/select`
 - `set_summary(url, summary)` → calls `POST /notes/set_summary`
 - `append_qa(url, question, answer)` → calls `POST /notes/append_qa` (recommended)
 - `append_quiz(url, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
@@ -89,6 +74,8 @@ Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved autom
 
 Then tell the agent in its system prompt:
 - When a user provides a URL / says “analyze”, call `fetch_page_content(url)` first.
+- At call start (or when user says “analyze” / is silent), call `get_selected_topics(url)` and confirm:
+  “Today, would you like to study topics 1–5: …?” If confirmed, begin with Topic 1.
 - After summarizing, call `set_summary(url, summary)`.
 - When the user asks a question and you answer it, call `append_qa(url, question, answer)`.
 - When you run a quiz, call `append_quiz(...)` with the prompt and feedback.

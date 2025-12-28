@@ -5,21 +5,6 @@ function originOnly(raw: string): string {
   return u.origin;
 }
 
-export async function extractUrl(params: { url: string }) {
-  const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/extract`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params)
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Extract failed (${res.status}) @ ${endpoint}: ${text}`);
-  }
-  return await res.json();
-}
-
 export async function getTopics(params: { url: string }) {
   const base = originOnly(BACKEND_URL);
   const endpoint = `${base}/topics`;
@@ -35,9 +20,9 @@ export async function getTopics(params: { url: string }) {
   return await res.json();
 }
 
-export async function summarizeUrl(params: { url: string; parts?: number; maxCharsPerPart?: number }) {
+export async function selectTopics(params: { url: string; topics: string[] }) {
   const base = originOnly(BACKEND_URL);
-  const endpoint = `${base}/summarize`;
+  const endpoint = `${base}/topics/select`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,7 +30,7 @@ export async function summarizeUrl(params: { url: string; parts?: number; maxCha
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Summarize failed (${res.status}) @ ${endpoint}: ${text}`);
+    throw new Error(`Topics select failed (${res.status}) @ ${endpoint}: ${text}`);
   }
   return await res.json();
 }

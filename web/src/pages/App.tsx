@@ -4,6 +4,7 @@ import {
   deleteSession,
   downloadNotesDocx,
   getTopics,
+  selectTopics,
   getNotes,
   getSessions,
   resetNotes,
@@ -58,10 +59,12 @@ export function App() {
     "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
   );
   const [isStartingSession, setIsStartingSession] = useState(false);
+  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [notes, setNotes] = useState<Notes | null>(null);
   const [isNotesAutoRefresh, setIsNotesAutoRefresh] = useState(false);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [topics, setTopics] = useState<TopicsResponse | null>(null);
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
 
   useEffect(() => {
     // Load ElevenLabs widget embed script once.
@@ -149,10 +152,35 @@ export function App() {
     }
   }
 
+  async function onLoadTopics() {
+    try {
+      const u = url.trim();
+      if (!u) {
+        setStatus("Please paste a URL first.");
+        return;
+      }
+      setIsLoadingTopics(true);
+      setTopics(null);
+      setSelectedTopics([]);
+      setStatus("Fetching topics…");
+      const t = (await getTopics({ url: u })) as TopicsResponse;
+      setTopics(t);
+      setStatus("Topics loaded. Select up to 5 topics, then click Start session.");
+    } catch (e: any) {
+      setStatus(`Topics error: ${e?.message || String(e)}`);
+    } finally {
+      setIsLoadingTopics(false);
+    }
+  }
+
   async function onStartSession() {
     try {
       if (!url.trim()) {
         setStatus("Please paste a URL first.");
+        return;
+      }
+      if (selectedTopics.length === 0) {
+        setStatus("Select at least 1 topic (up to 5), then start the session.");
         return;
       }
       setIsStartingSession(true);
@@ -165,12 +193,10 @@ export function App() {
         "Session started.\n\nNext: Start the call (below), paste the URL into the conversation, and say “analyze this”.\nThe agent should call your /extract tool and then save notes via set_summary / append_qa / append_quiz."
       );
 
-      // Fetch a cheap topic list (no LLM) so the student sees what's inside the page.
       try {
-        const t = (await getTopics({ url: u })) as TopicsResponse;
-        setTopics(t);
+        await selectTopics({ url: u, topics: selectedTopics });
       } catch {
-        // ignore (some pages have no headings / block bots)
+        // ignore (call can still proceed)
       }
 
       openPage();
@@ -278,6 +304,7 @@ export function App() {
       setUrl("");
       setNotes(null);
       setTopics(null);
+      setSelectedTopics([]);
       setIsNotesAutoRefresh(false);
       setStatus(
         "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
@@ -382,7 +409,10 @@ export function App() {
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://…"
                 />
-                <button onClick={onStartSession} disabled={isStartingSession}>
+                <button className="secondary" onClick={onLoadTopics} disabled={isLoadingTopics}>
+                  {isLoadingTopics ? "Loading…" : "Get topics"}
+                </button>
+                <button onClick={onStartSession} disabled={isStartingSession || selectedTopics.length === 0}>
                   {isStartingSession ? "Starting…" : "Start session"}
                 </button>
                 <button className="secondary" onClick={onDownloadNotes} disabled={!url.trim()}>
@@ -426,12 +456,45 @@ export function App() {
                   </div>
                 ) : null}
                 <div style={{ marginTop: 10 }}>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                    Select up to <strong>5</strong> topics for today’s session.
+                  </div>
                   {topics.topics.slice(0, 40).map((t, i) => {
                     const indent = Math.max(0, Math.min(3, (t.level || 2) - 2)) * 12;
+                    const checked = selectedTopics.includes(t.title);
+                    const disabled = !checked && selectedTopics.length >= 5;
                     return (
-                      <div key={`${t.title}-${i}`} style={{ fontSize: 13, lineHeight: 1.4, marginBottom: 6, paddingLeft: indent }}>
-                        - {t.title}
-                      </div>
+                      <label
+                        key={`${t.title}-${i}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          fontSize: 13,
+                          lineHeight: 1.4,
+                          marginBottom: 6,
+                          paddingLeft: indent,
+                          color: disabled ? "#94a3b8" : undefined,
+                          cursor: disabled ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disabled}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setSelectedTopics((prev) => {
+                              if (on) {
+                                if (prev.includes(t.title) || prev.length >= 5) return prev;
+                                return [...prev, t.title];
+                              }
+                              return prev.filter((x) => x !== t.title);
+                            });
+                          }}
+                        />
+                        {t.title}
+                      </label>
                     );
                   })}
                   {topics.topics.length > 40 ? (

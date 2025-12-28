@@ -14,16 +14,14 @@ from dotenv import load_dotenv
 from backend.schemas import (
     ExtractRequest,
     ExtractResponse,
-    ExtractChunkRequest,
-    ExtractChunkResponse,
     ExtractPartsRequest,
     ExtractPartsResponse,
     ExtractPart,
-    SummarizeRequest,
-    SummarizeResponse,
     TopicsRequest,
     TopicsResponse,
     TopicItem,
+    TopicsSelectRequest,
+    TopicsSelectResponse,
     NotesAppendQuestionRequest,
     NotesAppendTurnRequest,
     NotesAppendQARequest,
@@ -36,7 +34,7 @@ from backend.schemas import (
 )
 from backend.notes_repo import PostgresNotesRepo, make_notes_repo
 from backend.url_extract import fetch_and_extract_main_text, fetch_and_extract_topics
-from backend.gemini_api import GeminiError, GeminiRateLimitError, gemini_generate_text, get_gemini_model
+from backend.topic_selection import TopicSelectionStore
 
 
 # Local dev convenience:
@@ -45,8 +43,22 @@ from backend.gemini_api import GeminiError, GeminiRateLimitError, gemini_generat
 # Cloud Run should use real env vars / Secret Manager (it will not have your local .env file).
 load_dotenv()
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"), override=False)
-app = FastAPI(title="Voice AI Study Companion API", version="0.2.0")
+
+openapi_tags = [
+    {"name": "System", "description": "Health checks and service info"},
+    {"name": "Sessions", "description": "Session sidebar list and housekeeping"},
+    {"name": "Topics", "description": "Topic discovery + selected topics for today"},
+    {"name": "Agent Tools", "description": "Tools intended to be called by the ElevenLabs agent"},
+    {"name": "Notes", "description": "Persisted notes + DOCX export"},
+]
+
+app = FastAPI(
+    title="Voice AI Study Companion API",
+    version="0.2.0",
+    openapi_tags=openapi_tags,
+)
 notes_repo = make_notes_repo()
+topic_selection = TopicSelectionStore()
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,7 +68,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
+@app.get("/", tags=["System"])
 def root() -> dict:
     return {
         "ok": True,
@@ -65,7 +77,8 @@ def root() -> dict:
             "/health",
             "/extract",
             "/topics",
-            "/summarize",
+            "/topics/select",
+            "/topics/selected",
             "/sessions",
             "/sessions/touch",
             "/sessions (DELETE)",
@@ -82,7 +95,7 @@ def root() -> dict:
     }
 
 
-@app.get("/health")
+@app.get("/health", tags=["System"])
 def health() -> dict:
     return {"ok": True}
 
@@ -93,7 +106,7 @@ def _startup() -> None:
         notes_repo.ensure_schema()
 
 
-@app.get("/sessions", response_model=SessionsListResponse)
+@app.get("/sessions", response_model=SessionsListResponse, tags=["Sessions"])
 def sessions_list(limit: int = 50) -> SessionsListResponse:
     try:
         sessions = notes_repo.list_sessions(limit=limit)
@@ -102,7 +115,7 @@ def sessions_list(limit: int = 50) -> SessionsListResponse:
         raise HTTPException(status_code=500, detail=f"Sessions list failed: {e}")
 
 
-@app.post("/sessions/touch")
+@app.post("/sessions/touch", tags=["Sessions"])
 def sessions_touch(req: SessionTouchRequest) -> dict:
     try:
         notes_repo.touch_session(req.url)
@@ -111,7 +124,7 @@ def sessions_touch(req: SessionTouchRequest) -> dict:
         raise HTTPException(status_code=500, detail=f"Sessions touch failed: {e}")
 
 
-@app.delete("/sessions")
+@app.delete("/sessions", tags=["Sessions"])
 def sessions_delete(url: str) -> dict:
     try:
         notes_repo.delete_session(url)
@@ -120,7 +133,7 @@ def sessions_delete(url: str) -> dict:
         raise HTTPException(status_code=500, detail=f"Sessions delete failed: {e}")
 
 
-@app.post("/extract", response_model=ExtractResponse)
+@app.post("/extract", response_model=ExtractResponse, tags=["Agent Tools"])
 async def extract(req: ExtractRequest) -> ExtractResponse:
     """
     Option B backend: the agent handles all LLM calls (Gemini configured in ElevenLabs).
@@ -227,7 +240,7 @@ def _split_into_parts(text: str, num_parts: int, max_chars_per_part: int) -> tup
     return (list(zip(offsets, capped)), truncated)
 
 
-@app.post("/extract/parts", response_model=ExtractPartsResponse)
+@app.post("/extract/parts", response_model=ExtractPartsResponse, tags=["Agent Tools"], include_in_schema=False)
 async def extract_parts(req: ExtractPartsRequest) -> ExtractPartsResponse:
     """
     Fetches & extracts the page text, then returns it split into N parts (default 4).
@@ -252,7 +265,7 @@ async def extract_parts(req: ExtractPartsRequest) -> ExtractPartsResponse:
         raise HTTPException(status_code=500, detail=f"Extract parts failed: {e}")
 
 
-@app.post("/topics", response_model=TopicsResponse)
+@app.post("/topics", response_model=TopicsResponse, tags=["Topics"])
 async def topics(req: TopicsRequest) -> TopicsResponse:
     """
     Best-effort topic listing from the page structure (headings / markdown headings).
@@ -266,72 +279,30 @@ async def topics(req: TopicsRequest) -> TopicsResponse:
         raise HTTPException(status_code=500, detail=f"Topics failed: {e}")
 
 
-@app.post("/summarize", response_model=SummarizeResponse)
-async def summarize(req: SummarizeRequest) -> SummarizeResponse:
-    """
-    Backend summarization (no ElevenLabs call required).
-    Uses Gemini via API key (GEMINI_API_KEY or GOOGLE_API_KEY) and stores the final summary in notes.
-    """
+@app.post("/topics/select", response_model=TopicsSelectResponse, tags=["Topics"])
+def topics_select(req: TopicsSelectRequest) -> TopicsSelectResponse:
     try:
-        text = await fetch_and_extract_main_text(req.url)
-        if not text or len(text) < 200:
-            raise HTTPException(status_code=400, detail="Could not extract enough readable text from that URL.")
-
-        parts_with_offsets, truncated = _split_into_parts(
-            text, num_parts=int(req.parts or 4), max_chars_per_part=int(req.maxCharsPerPart or 9000)
-        )
-        parts_text = [pt for _, pt in parts_with_offsets if pt.strip()]
-        if not parts_text:
-            raise HTTPException(status_code=400, detail="No readable text parts could be extracted.")
-
-        per_part_summaries: list[str] = []
-        for i, pt in enumerate(parts_text, start=1):
-            prompt = (
-                "You are a study tutor.\n"
-                "Summarize the following content PART into:\n"
-                "- 1 short paragraph\n"
-                "- 5 bullet key points\n"
-                "- 3 important terms with definitions\n\n"
-                f"PART {i}/{len(parts_text)}:\n{pt}"
-            )
-            per_part_summaries.append(await gemini_generate_text(prompt=prompt))
-
-        combine_prompt = (
-            "You are a study tutor.\n"
-            "Combine the PART summaries into a final output with:\n"
-            "1) A clear 8-12 sentence summary\n"
-            "2) 10 key bullets (crisp)\n"
-            "3) 5 quick-check questions (no answers)\n\n"
-            "PART SUMMARIES:\n\n"
-            + "\n\n---\n\n".join(per_part_summaries)
-        )
-        final_summary = await gemini_generate_text(prompt=combine_prompt)
-
-        # Store in notes so UI + DOCX download show it immediately.
-        try:
-            notes_repo.set_summary(req.url, final_summary)
-        except Exception:
-            # Don't fail summarization if notes storage hiccups.
-            pass
-
-        return SummarizeResponse(
-            url=req.url,
-            summary=final_summary,
-            model=get_gemini_model(),
-            truncated=truncated,
-            totalChars=len(text),
-        )
-    except GeminiRateLimitError as e:
-        raise HTTPException(status_code=429, detail=str(e))
-    except GeminiError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except HTTPException:
-        raise
+        chosen = [t.strip() for t in (req.topics or []) if str(t).strip()]
+        # enforce <=5 server-side too
+        chosen = chosen[:5]
+        rec = topic_selection.set(req.url, chosen)
+        return TopicsSelectResponse(url=rec.url, topics=rec.topics, updatedAt=str(int(rec.updated_at)))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Summarize failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Topics select failed: {e}")
 
 
-@app.post("/notes/reset", response_model=NotesGetResponse)
+@app.get("/topics/selected", response_model=TopicsSelectResponse, tags=["Topics"])
+def topics_selected(url: str) -> TopicsSelectResponse:
+    try:
+        rec = topic_selection.get(url)
+        if not rec:
+            return TopicsSelectResponse(url=url, topics=[], updatedAt="")
+        return TopicsSelectResponse(url=rec.url, topics=rec.topics, updatedAt=str(int(rec.updated_at)))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Topics selected failed: {e}")
+
+
+@app.post("/notes/reset", response_model=NotesGetResponse, tags=["Notes"])
 def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
     try:
         rec = notes_repo.reset(req.url)
@@ -348,7 +319,7 @@ def notes_reset(req: NotesResetRequest) -> NotesGetResponse:
     )
 
 
-@app.post("/notes/set_summary", response_model=NotesGetResponse)
+@app.post("/notes/set_summary", response_model=NotesGetResponse, tags=["Notes"])
 def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
     try:
         rec = notes_repo.set_summary(req.url, req.summary)
@@ -365,7 +336,7 @@ def notes_set_summary(req: NotesSetSummaryRequest) -> NotesGetResponse:
     )
 
 
-@app.post("/notes/append_question", response_model=NotesGetResponse)
+@app.post("/notes/append_question", response_model=NotesGetResponse, tags=["Notes"], include_in_schema=False)
 def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
     try:
         rec = notes_repo.append_question(req.url, req.question)
@@ -382,7 +353,7 @@ def notes_append_question(req: NotesAppendQuestionRequest) -> NotesGetResponse:
     )
 
 
-@app.post("/notes/append_turn", response_model=NotesGetResponse)
+@app.post("/notes/append_turn", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
     try:
         rec = notes_repo.append_turn(req.url, req.role, req.text)
@@ -399,7 +370,7 @@ def notes_append_turn(req: NotesAppendTurnRequest) -> NotesGetResponse:
     )
 
 
-@app.post("/notes/append_qa", response_model=NotesGetResponse)
+@app.post("/notes/append_qa", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
     try:
         rec = notes_repo.append_qa(req.url, req.question, req.answer)
@@ -416,7 +387,7 @@ def notes_append_qa(req: NotesAppendQARequest) -> NotesGetResponse:
     )
 
 
-@app.post("/notes/append_quiz", response_model=NotesGetResponse)
+@app.post("/notes/append_quiz", response_model=NotesGetResponse, tags=["Notes"])
 def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
     try:
         rec = notes_repo.append_quiz(req.url, req.question, req.userAnswer, req.correctAnswer, req.explanation)
@@ -433,7 +404,7 @@ def notes_append_quiz(req: NotesAppendQuizRequest) -> NotesGetResponse:
     )
 
 
-@app.get("/notes", response_model=NotesGetResponse)
+@app.get("/notes", response_model=NotesGetResponse, tags=["Notes"])
 def notes_get(url: str) -> NotesGetResponse:
     try:
         rec = notes_repo.get(url)
@@ -456,7 +427,7 @@ def notes_get(url: str) -> NotesGetResponse:
     )
 
 
-@app.get("/notes/download.docx")
+@app.get("/notes/download.docx", tags=["Notes"])
 def notes_download_docx(url: str) -> StreamingResponse:
     rec = notes_repo.get(url) or notes_repo.reset(url)
 

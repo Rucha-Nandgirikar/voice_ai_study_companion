@@ -184,25 +184,6 @@ class SessionTouchRequest(BaseModel):
     url: str = Field(..., min_length=1)
 
 
-class SummarizeRequest(BaseModel):
-    url: str = Field(..., min_length=1, description="Public URL to fetch/extract and summarize server-side")
-    parts: int = Field(4, ge=2, le=12, description="Number of parts to split into (default 4)")
-    maxCharsPerPart: int = Field(
-        9000,
-        ge=500,
-        le=200_000,
-        description="Hard limit for each part's character count (prevents oversized model inputs).",
-    )
-
-
-class SummarizeResponse(BaseModel):
-    url: str
-    summary: str
-    model: str | None = None
-    truncated: bool = False
-    totalChars: int | None = None
-
-
 class TopicsRequest(BaseModel):
     url: str = Field(..., min_length=1, description="Public URL to fetch and extract topic headings from")
 
@@ -216,6 +197,17 @@ class TopicsResponse(BaseModel):
     url: str
     title: str | None = None
     topics: list[TopicItem] = Field(default_factory=list)
+
+
+class TopicsSelectRequest(BaseModel):
+    url: str = Field(..., min_length=1)
+    topics: list[str] = Field(default_factory=list, description="Up to 5 selected topic titles")
+
+
+class TopicsSelectResponse(BaseModel):
+    url: str
+    topics: list[str] = Field(default_factory=list)
+    updatedAt: str
 
 
 
