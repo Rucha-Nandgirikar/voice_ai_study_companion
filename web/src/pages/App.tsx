@@ -66,6 +66,19 @@ export function App() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [topics, setTopics] = useState<TopicsResponse | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [completedTopics, setCompletedTopics] = useState<string[]>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Handle window resize to collapse sidebar on narrow screens
+  useEffect(() => {
+    const handleResize = () => {
+      // Collapse sidebar when window width is less than 768px (approximately half of typical screen)
+      setIsSidebarCollapsed(window.innerWidth < 768);
+    };
+    handleResize(); // Check on mount
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     // Load ElevenLabs widget embed script once.
@@ -165,10 +178,40 @@ export function App() {
       setTopics(null);
       setSelectedTopics([]);
       setSessionId("");
+      setCompletedTopics([]);
       setStatus("Fetching topics…");
+      
+      // Load topics from the page
       const t = (await getTopics({ url: u })) as TopicsResponse;
       setTopics(t);
-      setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
+      
+      // Check if this URL matches any previous sessions and aggregate all completed topics
+      try {
+        const sessionsRes = await getSessions({ limit: 100 });
+        const allSessions = Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [];
+        // Find all sessions for this URL and collect completed topics
+        const matchingSessions = allSessions.filter((s: any) => s?.url === u);
+        const allCompletedTopics = new Set<string>();
+        matchingSessions.forEach((s: any) => {
+          if (s?.completedTopics && Array.isArray(s.completedTopics)) {
+            s.completedTopics.forEach((topic: string) => allCompletedTopics.add(topic));
+          }
+        });
+        const completedTopicsList = Array.from(allCompletedTopics);
+        if (completedTopicsList.length > 0) {
+          // Pre-select all completed topics from any previous session for this URL
+          setCompletedTopics(completedTopicsList);
+          setSelectedTopics(completedTopicsList);
+          setStatus(
+            `Topics loaded. Pre-selected ${completedTopicsList.length} previously completed topic(s) from previous sessions. You can adjust your selection (up to 8 topics), then click Start session.`
+          );
+        } else {
+          setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
+        }
+      } catch {
+        // No previous sessions or error - that's fine
+        setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
+      }
     } catch (e: any) {
       setStatus(`Topics error: ${e?.message || String(e)}`);
     } finally {
@@ -328,22 +371,6 @@ export function App() {
     }
   }
 
-  async function onRefreshNotes() {
-    try {
-      const sid = sessionId.trim();
-      if (!sid) {
-        setStatus("Start/select a session first.");
-        return;
-      }
-      setStatus("Refreshing notes…");
-      const data = (await getNotes({ sessionId: sid })) as Notes;
-      setNotes(data);
-      setStatus("Notes refreshed.");
-    } catch (e: any) {
-      setStatus(`Refresh notes error: ${e?.message || String(e)}`);
-    }
-  }
-
   async function onDownloadNotes() {
     try {
       const sid = sessionId.trim();
@@ -359,51 +386,76 @@ export function App() {
     }
   }
 
+  // Find current session for breadcrumb
+  const currentSession = sessions.find((s) => sessionId.trim() === s.sessionId);
+
   return (
     <div className="page">
       <div className="layout">
-        <aside className="sidebar">
-          <div className="sidebarTitle">Sessions</div>
-          <div className="sessionList">
-            {sessions.length === 0 ? (
-              <div className="muted" style={{ fontSize: 12 }}>
-                No sessions yet. Paste a URL and click Analyze.
+        {isSidebarCollapsed ? (
+          <div className="breadcrumbBar">
+            {currentSession ? (
+              <div className="breadcrumb">
+                <span className="breadcrumbLabel">Session:</span>
+                <span className="breadcrumbSession" title={currentSession.url}>
+                  {currentSession.sessionId.slice(0, 12)} • {currentSession.title}
+                </span>
               </div>
-            ) : null}
-            {sessions.map((s) => {
-              const key = `${s.sessionId}|${s.url}`;
-              const active = sessionId.trim() === s.sessionId;
-              return (
-                <div
-                  key={key}
-                  className={`sessionItem ${active ? "active" : ""}`}
-                  onClick={() => onSelectSession(key)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <div className="sessionItemTop">
-                    <div className="sessionTitle" title={s.url}>
-                      <span className="sessionIdDisplay">{s.sessionId.slice(0, 12)}</span>
-                      <span className="muted"> • {s.title}</span>
-                    </div>
-                    <button
-                      className="sessionDelete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteSession(key);
-                      }}
-                      aria-label="Delete session"
-                      type="button"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="sessionMeta">{s.url}</div>
-                </div>
-              );
-            })}
+            ) : sessions.length > 0 ? (
+              <div className="breadcrumb">
+                <span className="breadcrumbLabel">Sessions:</span>
+                <span className="breadcrumbSession">{sessions.length} session(s)</span>
+              </div>
+            ) : (
+              <div className="breadcrumb">
+                <span className="breadcrumbLabel">No sessions</span>
+              </div>
+            )}
           </div>
-        </aside>
+        ) : (
+          <aside className="sidebar">
+            <div className="sidebarTitle">Sessions</div>
+            <div className="sessionList">
+              {sessions.length === 0 ? (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  No sessions yet. Paste a URL and click Analyze.
+                </div>
+              ) : null}
+              {sessions.map((s) => {
+                const key = `${s.sessionId}|${s.url}`;
+                const active = sessionId.trim() === s.sessionId;
+                return (
+                  <div
+                    key={key}
+                    className={`sessionItem ${active ? "active" : ""}`}
+                    onClick={() => onSelectSession(key)}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className="sessionItemTop">
+                      <div className="sessionTitle" title={s.url}>
+                        <span className="sessionIdDisplay">{s.sessionId.slice(0, 12)}</span>
+                        <span className="muted"> • {s.title}</span>
+                      </div>
+                      <button
+                        className="sessionDelete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteSession(key);
+                        }}
+                        aria-label="Delete session"
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="sessionMeta">{s.url}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </aside>
+        )}
 
         <main className="main">
           <div className="content">
@@ -435,9 +487,6 @@ export function App() {
                 </button>
                 <button className="secondary" onClick={onDownloadNotes} disabled={!url.trim()}>
                   Download notes
-                </button>
-                <button className="secondary" onClick={onRefreshNotes} disabled={!url.trim()}>
-                  Refresh notes
                 </button>
               </div>
               <div className="status">{status}</div>
@@ -481,6 +530,7 @@ export function App() {
                     const indent = Math.max(0, Math.min(3, (t.level || 2) - 2)) * 12;
                     const checked = selectedTopics.includes(t.title);
                     const disabled = !checked && selectedTopics.length >= 8;
+                    const isCompleted = completedTopics.includes(t.title);
                     return (
                       <label
                         key={`${t.title}-${i}`}
@@ -511,7 +561,21 @@ export function App() {
                             });
                           }}
                         />
-                        {t.title}
+                        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {t.title}
+                          {isCompleted && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "#10b981",
+                                fontWeight: 600,
+                              }}
+                              title="Completed in a previous session"
+                            >
+                              ✓ Completed
+                            </span>
+                          )}
+                        </span>
                       </label>
                     );
                   })}
