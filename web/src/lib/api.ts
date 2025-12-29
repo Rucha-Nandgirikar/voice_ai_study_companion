@@ -46,7 +46,7 @@ export async function downloadNotesDocx(params: { sessionId: string }) {
   const blob = await res.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "study-notes.docx";
+  a.download = `${params.sessionId}.docx`;
   document.body.appendChild(a);
   a.click();
   a.remove();

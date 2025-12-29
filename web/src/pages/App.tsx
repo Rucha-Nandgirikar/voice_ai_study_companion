@@ -347,7 +347,7 @@ export function App() {
       }
       setStatus("Preparing notes download…");
       await downloadNotesDocx({ sessionId: sid });
-      setStatus("Downloaded notes (study-notes.docx).");
+      setStatus(`Downloaded notes (${sid}.docx).`);
     } catch (e: any) {
       setStatus(`Download notes error: ${e?.message || String(e)}`);
     }
