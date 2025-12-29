@@ -76,6 +76,17 @@ export async function getSessions(params?: { limit?: number }) {
   return await res.json();
 }
 
+export async function getLatestSession(params: { url: string }) {
+  const base = originOnly(BACKEND_URL);
+  const endpoint = `${base}/sessions/latest?url=${encodeURIComponent(params.url)}`;
+  const res = await fetch(endpoint);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Latest session get failed (${res.status}) @ ${endpoint}: ${text}`);
+  }
+  return await res.json();
+}
+
 export async function deleteSession(params: { sessionId: string }) {
   const base = originOnly(BACKEND_URL);
   const endpoint = `${base}/sessions?sessionId=${encodeURIComponent(params.sessionId)}`;

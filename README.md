@@ -24,7 +24,9 @@ This repo contains:
 - `POST /sessions/start` (UI: create a new study session for this URL with selected topics)
 - `GET /sessions` (UI: list sessions for the left sidebar)
 - `GET /sessions/latest?url=...` (agent: find the latest session for that URL, including selected topics)
-- Notes (MVP; in-memory):
+- `POST /sessions/progress/mark_topic_done` (agent: mark a topic as completed)
+- `POST /sessions/progress/set_current_topic` (agent: set the current active topic)
+- Notes (MVP; persisted in Postgres if DATABASE_URL is set):
   - `GET /notes?sessionId=...` (fetch notes for a session)
   - `POST /notes/reset` (reset notes for a session)
   - `POST /notes/set_summary` (agent saves a summary)
@@ -67,21 +69,28 @@ Also ensure the Cloud Run runtime service account has the **Cloud SQL Client** r
 Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
 
 - `fetch_page_content(url)` → calls `POST /extract`
-- `get_latest_session(url)` → calls `GET /sessions/latest?url=...` and returns `sessionId` + selected topics
+- `get_latest_session(url)` → calls `GET /sessions/latest?url=...` and returns `sessionId` + selectedTopics + completedTopics + currentTopic
 - `set_summary(sessionId, summary)` → calls `POST /notes/set_summary`
 - `append_qa(sessionId, question, answer)` → calls `POST /notes/append_qa` (recommended)
 - `append_quiz(sessionId, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
+- `mark_topic_done(sessionId, topicTitle)` → calls `POST /sessions/progress/mark_topic_done` (optional: track completed topics)
+- `set_current_topic(sessionId, topicTitle)` → calls `POST /sessions/progress/set_current_topic` (optional: track which topic is active)
 - (optional) `append_turn(sessionId, role, text)` → calls `POST /notes/append_turn` (raw transcript)
 
 Then tell the agent in its system prompt:
-- At call start (or when user says “analyze” / is silent):
+- At call start (or when user says "analyze" / is silent):
   - Read the URL from the user message
-  - Call `get_latest_session(url)` to get `sessionId` + the selected topics
-  - Confirm: “Today, would you like to study topics 1–8: …?” If confirmed, begin with Topic 1.
-- When you need page content for a topic, call `fetch_page_content(url)` (and/or chunking endpoints later).
+  - Call `get_latest_session(url)` to get `sessionId` + selectedTopics + completedTopics + currentTopic
+  - If completedTopics exist, you can say: "Last time you completed topics X, Y. Today's session covers topics 1–8: …" 
+  - Confirm: "Today, would you like to study topics 1–8: …?" If confirmed, begin with Topic 1 (or currentTopic if set).
+- When you need page content for a topic, call `fetch_page_content(url)`.
+- After completing a topic (user understands it), call `mark_topic_done(sessionId, topicTitle)` to track progress.
+- When switching topics, call `set_current_topic(sessionId, topicTitle)` to track the active topic.
 - After summarizing a topic/block, call `set_summary(sessionId, summary)` (you can append/overwrite depending on your prompt).
 - When the user asks a question and you answer it, call `append_qa(sessionId, question, answer)`.
 - When you run a quiz, call `append_quiz(sessionId, ...)` with the prompt and feedback.
+
+**Note:** If the user pastes the same URL again later, `get_latest_session(url)` returns the same latest session (same sessionId and selectedTopics). To start a NEW session with different topics, the user must go to the web UI and click "Start session" again with new topic selections.
 
 ### Session memory (MVP)
 

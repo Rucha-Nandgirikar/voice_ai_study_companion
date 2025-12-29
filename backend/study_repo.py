@@ -45,6 +45,8 @@ class StudyRepo(Protocol):
 
     def latest_session_for_url(self, url: str) -> StudySession | None: ...
 
+    def find_session_by_url_and_topics(self, url: str, selected_topics: list[str]) -> StudySession | None: ...
+
     def list_sessions(self, limit: int = 50) -> list[StudySession]: ...
 
     def delete_session(self, session_id: str) -> None: ...
@@ -64,6 +66,10 @@ class StudyRepo(Protocol):
         self, session_id: str, question: str, user_answer: str, correct_answer: str, explanation: str
     ) -> Notes: ...
 
+    def mark_topic_done(self, session_id: str, topic_title: str) -> StudySession: ...
+
+    def set_current_topic(self, session_id: str, topic_title: str) -> StudySession: ...
+
 
 class InMemoryStudyRepo:
     def __init__(self) -> None:
@@ -74,9 +80,18 @@ class InMemoryStudyRepo:
         return
 
     def start_session(self, url: str, selected_topics: list[str]) -> StudySession:
-        sid = f"sess_{uuid.uuid4().hex}"
         sel = [t.strip() for t in (selected_topics or []) if str(t).strip()][:8]
-        s = StudySession(session_id=sid, url=url, selected_topics=sel)
+        # Always create a new session
+        sid = f"sess_{uuid.uuid4().hex}"
+        # If there's a previous session for this URL, copy its completedTopics to mark them as done
+        latest = self.latest_session_for_url(url)
+        completed_from_previous = latest.completed_topics if latest else []
+        s = StudySession(
+            session_id=sid,
+            url=url,
+            selected_topics=sel,
+            completed_topics=completed_from_previous.copy(),  # Copy completed topics from previous session
+        )
         self._sessions[sid] = s
         n = Notes(session_id=sid, url=url)
         self._notes[sid] = n
@@ -90,6 +105,17 @@ class InMemoryStudyRepo:
         items = [s for s in self._sessions.values() if s.url == url]
         items.sort(key=lambda s: s.updated_at, reverse=True)
         return items[0] if items else None
+
+    def find_session_by_url_and_topics(self, url: str, selected_topics: list[str]) -> StudySession | None:
+        """Find a session with matching URL and selectedTopics (normalized comparison)."""
+        def normalize_topics(ts: list[str]) -> list[str]:
+            return sorted([t.strip() for t in ts if str(t).strip()])
+
+        target_normalized = normalize_topics(selected_topics or [])
+        for s in self._sessions.values():
+            if s.url == url and normalize_topics(s.selected_topics) == target_normalized:
+                return s
+        return None
 
     def list_sessions(self, limit: int = 50) -> list[StudySession]:
         items = list(self._sessions.values())
@@ -175,6 +201,28 @@ class InMemoryStudyRepo:
         self._notes[session_id] = n
         s.updated_at = n.updated_at
         return n
+
+    def mark_topic_done(self, session_id: str, topic_title: str) -> StudySession:
+        s = self._sessions.get(session_id)
+        if not s:
+            raise ValueError("Unknown sessionId")
+        topic = (topic_title or "").strip()
+        if not topic:
+            raise ValueError("Missing topicTitle")
+        # Only add if it's in selectedTopics and not already in completedTopics
+        if topic in s.selected_topics and topic not in s.completed_topics:
+            s.completed_topics.append(topic)
+            s.updated_at = _now_iso()
+        return s
+
+    def set_current_topic(self, session_id: str, topic_title: str) -> StudySession:
+        s = self._sessions.get(session_id)
+        if not s:
+            raise ValueError("Unknown sessionId")
+        topic = (topic_title or "").strip()
+        s.current_topic = topic
+        s.updated_at = _now_iso()
+        return s
 
 
 class PostgresStudyRepo:
@@ -268,16 +316,20 @@ class PostgresStudyRepo:
             conn.commit()
 
     def start_session(self, url: str, selected_topics: list[str]) -> StudySession:
-        sid = f"sess_{uuid.uuid4().hex}"
         sel = [t.strip() for t in (selected_topics or []) if str(t).strip()][:8]
+        # Always create a new session
+        # If there's a previous session for this URL, copy its completedTopics to mark them as done
+        latest = self.latest_session_for_url(url)
+        completed_from_previous = (latest.completed_topics.copy() if latest else [])
+        sid = f"sess_{uuid.uuid4().hex}"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO study_sessions (session_id, url, selected_topics, completed_topics, current_topic, created_at, updated_at)
-                    VALUES (%s, %s, %s::jsonb, '[]'::jsonb, '', now(), now());
+                    VALUES (%s, %s, %s::jsonb, %s::jsonb, '', now(), now());
                     """,
-                    (sid, url, json.dumps(sel)),
+                    (sid, url, json.dumps(sel), json.dumps(completed_from_previous)),
                 )
                 cur.execute(
                     """
@@ -318,6 +370,31 @@ class PostgresStudyRepo:
                 )
                 row = cur.fetchone()
         return _row_to_session(row)
+
+    def find_session_by_url_and_topics(self, url: str, selected_topics: list[str]) -> StudySession | None:
+        """Find a session with matching URL and selectedTopics (normalized comparison)."""
+        def normalize_topics(ts: list[str]) -> list[str]:
+            return sorted([t.strip() for t in ts if str(t).strip()])
+
+        target_normalized = normalize_topics(selected_topics or [])
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                # Fetch all sessions for this URL and compare selected_topics
+                cur.execute(
+                    """
+                    SELECT session_id, url, selected_topics, completed_topics, current_topic, created_at, updated_at
+                      FROM study_sessions
+                     WHERE url = %s
+                     ORDER BY updated_at DESC;
+                    """,
+                    (url,),
+                )
+                rows = cur.fetchall() or []
+                for row in rows:
+                    s = _row_to_session(row)
+                    if s and normalize_topics(s.selected_topics) == target_normalized:
+                        return s
+        return None
 
     def list_sessions(self, limit: int = 50) -> list[StudySession]:
         lim = max(1, min(int(limit or 50), 200))
@@ -491,6 +568,53 @@ class PostgresStudyRepo:
                 cur.execute("UPDATE study_sessions SET updated_at = now() WHERE session_id = %s;", (session_id,))
             conn.commit()
         return self.get_notes(session_id) or Notes(session_id=session_id, url=s.url)
+
+    def mark_topic_done(self, session_id: str, topic_title: str) -> StudySession:
+        s = self.get_session(session_id)
+        if not s:
+            raise ValueError("Unknown sessionId")
+        topic = (topic_title or "").strip()
+        if not topic:
+            raise ValueError("Missing topicTitle")
+        # Only add if it's in selectedTopics and not already in completedTopics
+        if topic not in s.selected_topics:
+            raise ValueError(f"Topic '{topic}' is not in selectedTopics for this session")
+        if topic in s.completed_topics:
+            # Already marked as done, just return
+            return s
+        updated_completed = s.completed_topics + [topic]
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE study_sessions
+                       SET completed_topics = %s::jsonb,
+                           updated_at = now()
+                     WHERE session_id = %s;
+                    """,
+                    (json.dumps(updated_completed), session_id),
+                )
+            conn.commit()
+        return self.get_session(session_id) or s
+
+    def set_current_topic(self, session_id: str, topic_title: str) -> StudySession:
+        s = self.get_session(session_id)
+        if not s:
+            raise ValueError("Unknown sessionId")
+        topic = (topic_title or "").strip()
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE study_sessions
+                       SET current_topic = %s,
+                           updated_at = now()
+                     WHERE session_id = %s;
+                    """,
+                    (topic, session_id),
+                )
+            conn.commit()
+        return self.get_session(session_id) or s
 
 
 def _row_to_session(row: dict | None) -> StudySession | None:

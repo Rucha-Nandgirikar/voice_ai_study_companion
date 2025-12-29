@@ -31,6 +31,9 @@ from backend.schemas import (
     SessionLatestResponse,
     SessionItem,
     SessionsListResponse,
+    ProgressMarkTopicDoneRequest,
+    ProgressSetCurrentTopicRequest,
+    ProgressResponse,
 )
 from backend.url_extract import fetch_and_extract_main_text, fetch_and_extract_topics
 from backend.study_repo import PostgresStudyRepo, make_study_repo
@@ -169,6 +172,50 @@ def sessions_delete(sessionId: str) -> dict:
         return {"ok": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sessions delete failed: {e}")
+
+
+@app.post("/sessions/progress/mark_topic_done", response_model=ProgressResponse, tags=["Agent Tools"])
+def progress_mark_topic_done(req: ProgressMarkTopicDoneRequest) -> ProgressResponse:
+    """
+    Mark a topic as completed for this session.
+    The topic must exist in selectedTopics for this session.
+    """
+    try:
+        s = repo.mark_topic_done(req.sessionId, req.topicTitle)
+        return ProgressResponse(
+            sessionId=s.session_id,
+            url=s.url,
+            selectedTopics=s.selected_topics,
+            completedTopics=s.completed_topics,
+            currentTopic=s.current_topic,
+            updatedAt=s.updated_at,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Progress mark topic done failed: {e}")
+
+
+@app.post("/sessions/progress/set_current_topic", response_model=ProgressResponse, tags=["Agent Tools"])
+def progress_set_current_topic(req: ProgressSetCurrentTopicRequest) -> ProgressResponse:
+    """
+    Set the current active topic for this session.
+    This can be any topic (doesn't need to be in selectedTopics).
+    """
+    try:
+        s = repo.set_current_topic(req.sessionId, req.topicTitle)
+        return ProgressResponse(
+            sessionId=s.session_id,
+            url=s.url,
+            selectedTopics=s.selected_topics,
+            completedTopics=s.completed_topics,
+            currentTopic=s.current_topic,
+            updatedAt=s.updated_at,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Progress set current topic failed: {e}")
 
 
 @app.post("/extract", response_model=ExtractResponse, tags=["Agent Tools"])

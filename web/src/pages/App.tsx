@@ -383,7 +383,8 @@ export function App() {
                 >
                   <div className="sessionItemTop">
                     <div className="sessionTitle" title={s.url}>
-                      {s.title} <span className="muted">({s.sessionId.slice(0, 8)})</span>
+                      <span className="sessionIdDisplay">{s.sessionId.slice(0, 12)}</span>
+                      <span className="muted"> • {s.title}</span>
                     </div>
                     <button
                       className="sessionDelete"
