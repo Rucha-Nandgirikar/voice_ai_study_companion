@@ -29,6 +29,8 @@ type SessionItem = {
   url: string;
   title: string;
   updatedAt: string;
+  selectedTopics?: string[];
+  completedTopics?: string[];
 };
 
 type TopicItem = {
@@ -105,6 +107,8 @@ export function App() {
             url: String(x.url),
             title: safeTitleFromUrl(String(x.url)),
             updatedAt: String(x.updatedAt || ""),
+            selectedTopics: Array.isArray(x.selectedTopics) ? x.selectedTopics : [],
+            completedTopics: Array.isArray(x.completedTopics) ? x.completedTopics : [],
           }))
       );
     } catch {
@@ -277,36 +281,36 @@ export function App() {
     setSessionId(realSid);
     setUrl(realUrl);
     setIsNotesAutoRefresh(true);
-    setStatus("Loading notes…");
-    // Helpful: open the URL so the user can read alongside the notes/call.
+    setStatus("Loading session data…");
+
+    // Find the session to get selectedTopics and completedTopics
+    const session = sessions.find((s) => s.sessionId === realSid);
+    const selectedTopicsList = session?.selectedTopics || [];
+    const completedTopicsList = session?.completedTopics || [];
+    setSelectedTopics(selectedTopicsList);
+    setCompletedTopics(completedTopicsList);
+
     try {
-      const w = Math.min(1100, Math.max(900, window.screen.availWidth - 120));
-      const h = Math.min(900, Math.max(700, window.screen.availHeight - 160));
-      const left = Math.max(20, Math.round((window.screen.availWidth - w) / 2));
-      const top = Math.max(20, Math.round((window.screen.availHeight - h) / 3));
-      const features = [
-        "noopener",
-        "noreferrer",
-        "popup=1",
-        `width=${w}`,
-        `height=${h}`,
-        `left=${left}`,
-        `top=${top}`,
-      ].join(",");
-      const opened = window.open(realUrl, "_blank", features);
-      if (!opened) window.open(realUrl, "_blank", "noopener,noreferrer");
-    } catch {
-      // ignore
+      // Fetch topics from the URL
+      setTopics(null);
+      const t = (await getTopics({ url: realUrl })) as TopicsResponse;
+      setTopics(t);
+    } catch (e: any) {
+      setStatus(`Load topics error: ${e?.message || String(e)}`);
     }
-      // Refresh sessions list
-      await loadSessions();
+
     try {
+      // Fetch notes
       const data = (await getNotes({ sessionId: realSid })) as Notes;
       setNotes(data);
-      setStatus("Notes loaded.");
+      setStatus("Session loaded. Summary, Q&A, quizzes, and topics are displayed below.");
     } catch (e: any) {
       setStatus(`Load notes error: ${e?.message || String(e)}`);
+      setNotes(null);
     }
+
+    // Refresh sessions list
+    await loadSessions();
   }
 
   async function onDeleteSession(u: string) {
@@ -480,9 +484,11 @@ export function App() {
                 </div>
               ) : (
                 <>
-                  <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
-                    Tip: In the call, paste the URL and say “analyze”. Notes will update here automatically.
-                  </div>
+                  {selectedTopics.length > 0 ? (
+                    <div className="muted" style={{ fontSize: 12, textAlign: "center", marginBottom: 8 }}>
+                      <strong>Selected topics:</strong> {selectedTopics.join(", ")}
+                    </div>
+                  ) : null}
                   <div id="convai-root" className="convaiRoot" />
                   <ElevenLabsConvaiPortal agentId={AGENT_ID} />
                 </>
