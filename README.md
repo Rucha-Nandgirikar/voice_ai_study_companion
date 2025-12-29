@@ -25,7 +25,6 @@ This repo contains:
 - `GET /sessions` (UI: list sessions for the left sidebar)
 - `GET /sessions/latest?url=...` (agent: find the latest session for that URL, including selected topics)
 - `POST /sessions/progress/mark_topic_done` (agent: mark a topic as completed)
-- `POST /sessions/progress/set_current_topic` (agent: set the current active topic)
 - Notes (MVP; persisted in Postgres if DATABASE_URL is set):
   - `GET /notes?sessionId=...` (fetch notes for a session)
   - `POST /notes/reset` (reset notes for a session)
@@ -73,19 +72,19 @@ Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved autom
 - `set_summary(sessionId, summary)` → calls `POST /notes/set_summary`
 - `append_qa(sessionId, question, answer)` → calls `POST /notes/append_qa` (recommended)
 - `append_quiz(sessionId, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
-- `mark_topic_done(sessionId, topicTitle)` → calls `POST /sessions/progress/mark_topic_done` (optional: track completed topics)
-- `set_current_topic(sessionId, topicTitle)` → calls `POST /sessions/progress/set_current_topic` (optional: track which topic is active)
+- `mark_topic_done(sessionId, topicTitle)` → calls `POST /sessions/progress/mark_topic_done` (track completed topics)
 - (optional) `append_turn(sessionId, role, text)` → calls `POST /notes/append_turn` (raw transcript)
 
 Then tell the agent in its system prompt:
 - At call start (or when user says "analyze" / is silent):
   - Read the URL from the user message
-  - Call `get_latest_session(url)` to get `sessionId` + selectedTopics + completedTopics + currentTopic
-  - If completedTopics exist, you can say: "Last time you completed topics X, Y. Today's session covers topics 1–8: …" 
-  - Confirm: "Today, would you like to study topics 1–8: …?" If confirmed, begin with Topic 1 (or currentTopic if set).
-- When you need page content for a topic, call `fetch_page_content(url)`.
+  - Call `get_latest_session(url)` to get `sessionId` + selectedTopics + completedTopics
+  - If completedTopics exist:
+    - If 1-3 topics: "In previous sessions, you successfully completed topics: [list them]. Today's session covers [selectedTopics]."
+    - If 4+ topics: "In previous sessions, you successfully completed [count]+ topics. Today's session covers [selectedTopics]."
+  - Confirm: "Today, would you like to study topics 1–8: …?" If confirmed, begin with Topic 1.
+- Call `fetch_page_content(url)` ONCE at the start using the `url` from `get_latest_session(url)` response. You don't need to fetch again when switching topics - use the content you already fetched.
 - After completing a topic (user understands it), call `mark_topic_done(sessionId, topicTitle)` to track progress.
-- When switching topics, call `set_current_topic(sessionId, topicTitle)` to track the active topic.
 - After summarizing a topic/block, call `set_summary(sessionId, summary)` (you can append/overwrite depending on your prompt).
 - When the user asks a question and you answer it, call `append_qa(sessionId, question, answer)`.
 - When you run a quiz, call `append_quiz(sessionId, ...)` with the prompt and feedback.

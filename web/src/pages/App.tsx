@@ -93,27 +93,33 @@ export function App() {
     document.body.appendChild(s);
   }, []);
 
+  const loadSessions = async () => {
+    try {
+      const res = await getSessions({ limit: 50 });
+      const items = Array.isArray(res?.sessions) ? res.sessions : [];
+      setSessions(
+        items
+          .filter((x: any) => x?.url && x?.sessionId)
+          .map((x: any) => ({
+            sessionId: String(x.sessionId),
+            url: String(x.url),
+            title: safeTitleFromUrl(String(x.url)),
+            updatedAt: String(x.updatedAt || ""),
+          }))
+      );
+    } catch {
+      // If backend is redeploying/unavailable, keep the current list.
+    }
+  };
+
   useEffect(() => {
-    // Load sessions from backend (DB-backed).
-    const load = async () => {
-      try {
-        const res = await getSessions({ limit: 50 });
-        const items = Array.isArray(res?.sessions) ? res.sessions : [];
-        setSessions(
-          items
-            .filter((x: any) => x?.url && x?.sessionId)
-            .map((x: any) => ({
-              sessionId: String(x.sessionId),
-              url: String(x.url),
-              title: safeTitleFromUrl(String(x.url)),
-              updatedAt: String(x.updatedAt || ""),
-            }))
-        );
-      } catch {
-        // If backend is redeploying/unavailable, keep the current list.
-      }
+    // Load sessions from backend (DB-backed) on mount and when window regains focus
+    loadSessions();
+    const handleFocus = () => {
+      loadSessions();
     };
-    load();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   useEffect(() => {
@@ -252,22 +258,8 @@ export function App() {
 
       openPage();
 
-      try {
-        const res = await getSessions({ limit: 50 });
-        const items = Array.isArray(res?.sessions) ? res.sessions : [];
-        setSessions(
-          items
-            .filter((x: any) => x?.url && x?.sessionId)
-            .map((x: any) => ({
-              sessionId: String(x.sessionId),
-              url: String(x.url),
-              title: safeTitleFromUrl(String(x.url)),
-              updatedAt: String(x.updatedAt || ""),
-            }))
-        );
-      } catch {
-        // ignore
-      }
+      // Refresh sessions list
+      await loadSessions();
     } catch (e: any) {
       setStatus(`Start session error: ${e?.message || String(e)}`);
     } finally {
@@ -306,22 +298,8 @@ export function App() {
     } catch {
       // ignore
     }
-    try {
-      const res = await getSessions({ limit: 50 });
-      const items = Array.isArray(res?.sessions) ? res.sessions : [];
-      setSessions(
-        items
-          .filter((x: any) => x?.url && x?.sessionId)
-          .map((x: any) => ({
-            sessionId: String(x.sessionId),
-            url: String(x.url),
-            title: safeTitleFromUrl(String(x.url)),
-            updatedAt: String(x.updatedAt || ""),
-          }))
-      );
-    } catch {
-      // ignore
-    }
+      // Refresh sessions list
+      await loadSessions();
     try {
       const data = (await getNotes({ sessionId: realSid })) as Notes;
       setNotes(data);
@@ -340,23 +318,8 @@ export function App() {
     } catch {
       // ignore
     }
-    try {
-      const res = await getSessions({ limit: 50 });
-      const items = Array.isArray(res?.sessions) ? res.sessions : [];
-      setSessions(
-        items
-          .filter((x: any) => x?.url && x?.sessionId)
-          .map((x: any) => ({
-            sessionId: String(x.sessionId),
-            url: String(x.url),
-            title: safeTitleFromUrl(String(x.url)),
-            updatedAt: String(x.updatedAt || ""),
-          }))
-      );
-    } catch {
-      // ignore
-      setSessions((prev) => prev.filter((x) => x.sessionId !== realSid));
-    }
+    // Refresh sessions list
+    await loadSessions();
     if (sessionId.trim() === realSid) {
       setUrl("");
       setSessionId("");
@@ -413,7 +376,25 @@ export function App() {
           </div>
         ) : (
           <aside className="sidebar">
-            <div className="sidebarTitle">Sessions</div>
+            <div className="sidebarTitle" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>Sessions</span>
+              <button
+                onClick={loadSessions}
+                style={{
+                  fontSize: 11,
+                  padding: "4px 8px",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 6,
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+                title="Refresh sessions list"
+                type="button"
+              >
+                ↻
+              </button>
+            </div>
             <div className="sessionList">
               {sessions.length === 0 ? (
                 <div className="muted" style={{ fontSize: 12 }}>
