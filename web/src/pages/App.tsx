@@ -199,11 +199,10 @@ export function App() {
         });
         const completedTopicsList = Array.from(allCompletedTopics);
         if (completedTopicsList.length > 0) {
-          // Pre-select all completed topics from any previous session for this URL
+          // Show completed topics with green checkmark, but don't pre-select them
           setCompletedTopics(completedTopicsList);
-          setSelectedTopics(completedTopicsList);
           setStatus(
-            `Topics loaded. Pre-selected ${completedTopicsList.length} previously completed topic(s) from previous sessions. You can adjust your selection (up to 8 topics), then click Start session.`
+            `Topics loaded. ${completedTopicsList.length} topic(s) previously completed (marked with ✓). Select up to 8 topics for this session, then click Start session.`
           );
         } else {
           setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
