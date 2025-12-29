@@ -70,6 +70,7 @@ export function App() {
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
   const [completedTopics, setCompletedTopics] = useState<string[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showCallWidget, setShowCallWidget] = useState(true); // Show widget by default
 
   // Handle window resize to collapse sidebar on narrow screens
   useEffect(() => {
@@ -358,27 +359,7 @@ export function App() {
   return (
     <div className="page">
       <div className="layout">
-        {isSidebarCollapsed ? (
-          <div className="breadcrumbBar">
-            {currentSession ? (
-              <div className="breadcrumb">
-                <span className="breadcrumbLabel">Session:</span>
-                <span className="breadcrumbSession" title={currentSession.url}>
-                  {currentSession.sessionId.slice(0, 12)} • {currentSession.title}
-                </span>
-              </div>
-            ) : sessions.length > 0 ? (
-              <div className="breadcrumb">
-                <span className="breadcrumbLabel">Sessions:</span>
-                <span className="breadcrumbSession">{sessions.length} session(s)</span>
-              </div>
-            ) : (
-              <div className="breadcrumb">
-                <span className="breadcrumbLabel">No sessions</span>
-              </div>
-            )}
-          </div>
-        ) : (
+        {isSidebarCollapsed ? null : (
           <aside className="sidebar">
             <div className="sidebarTitle" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>Sessions</span>
@@ -466,33 +447,11 @@ export function App() {
                 <button className="secondary" onClick={onLoadTopics} disabled={isLoadingTopics}>
                   {isLoadingTopics ? "Loading…" : "Get topics"}
                 </button>
-                <button onClick={onStartSession} disabled={isStartingSession || selectedTopics.length === 0}>
-                  {isStartingSession ? "Starting…" : "Start session"}
-                </button>
                 <button className="secondary" onClick={onDownloadNotes} disabled={!url.trim()}>
                   Download notes
                 </button>
               </div>
               <div className="status">{status}</div>
-            </div>
-
-            <div className="card callCard" style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 800, marginBottom: 6, textAlign: "center" }}>Start the call</div>
-              {!AGENT_ID ? (
-                <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
-                  Missing <code>VITE_AGENT_ID</code>. Set it in <code>web/.env</code> (local) or Vercel env vars.
-                </div>
-              ) : (
-                <>
-                  {selectedTopics.length > 0 ? (
-                    <div className="muted" style={{ fontSize: 12, textAlign: "center", marginBottom: 8 }}>
-                      <strong>Selected topics:</strong> {selectedTopics.join(", ")}
-                    </div>
-                  ) : null}
-                  <div id="convai-root" className="convaiRoot" />
-                  <ElevenLabsConvaiPortal agentId={AGENT_ID} />
-                </>
-              )}
             </div>
 
             {topics?.topics?.length ? (
@@ -571,30 +530,54 @@ export function App() {
                     </div>
                   ) : null}
                 </div>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
+                  <button
+                    onClick={onStartSession}
+                    disabled={isStartingSession || selectedTopics.length === 0}
+                    style={{
+                      width: "100%",
+                      padding: "10px 20px",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      border: "none",
+                      borderRadius: 8,
+                      background: selectedTopics.length === 0 ? "#e5e7eb" : "#0f172a",
+                      color: selectedTopics.length === 0 ? "#94a3b8" : "#fff",
+                      cursor: selectedTopics.length === 0 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {isStartingSession ? "Starting…" : "Start session"}
+                  </button>
+                </div>
               </div>
             ) : null}
 
-            <div className="card" style={{ marginTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                <div style={{ fontWeight: 800 }}>Notes (auto-updates after you end the call)</div>
-                <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={isNotesAutoRefresh}
-                    onChange={(e) => setIsNotesAutoRefresh(e.target.checked)}
-                  />
-                  Auto refresh
-                </label>
-              </div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                {notes?.updatedAt ? (
-                  <>
-                    Last updated: <code>{notes.updatedAt}</code>
-                  </>
-                ) : (
-                  <>No notes yet. Start a call and ask the agent to analyze, then hang up.</>
-                )}
-              </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "flex-start" }}>
+              {/* Left Column: Notes */}
+              <div style={{ flex: showCallWidget ? "0 0 50%" : "1 1 auto", minWidth: 0 }}>
+                <div className="card">
+                  {notes && (notes.summary || (notes.qa && notes.qa.length > 0) || (notes.quizzes && notes.quizzes.length > 0)) ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                        <div style={{ fontWeight: 800 }}>Notes (auto-updates after you end the call)</div>
+                        <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={isNotesAutoRefresh}
+                            onChange={(e) => setIsNotesAutoRefresh(e.target.checked)}
+                          />
+                          Auto refresh
+                        </label>
+                      </div>
+                      <div className="muted" style={{ marginTop: 6 }}>
+                        Last updated: <code>{notes.updatedAt}</code>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      No notes yet. Start a call and ask the agent to analyze, then hang up.
+                    </div>
+                  )}
 
               {notes?.summary ? (
                 <div style={{ marginTop: 10 }}>
@@ -646,7 +629,32 @@ export function App() {
                   ))}
                 </div>
               ) : null}
+                </div>
+              </div>
+
+              {/* Right Column: Call Widget */}
+              <div style={{ flex: "0 0 50%", minWidth: 0 }}>
+                <div className="" style={{ position: "sticky", top: 16 }}>
+                  {/* <div style={{ fontWeight: 800, marginBottom: 8 }}>Call</div> */}
+                  {!AGENT_ID ? (
+                    <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
+                      Missing <code>VITE_AGENT_ID</code>. Set it in <code>web/.env</code> (local) or Vercel env vars.
+                    </div>
+                  ) : (
+                    <>
+                      {selectedTopics.length > 0 ? (
+                        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                          <strong>Selected topics:</strong> {selectedTopics.join(", ")}
+                        </div>
+                      ) : null}
+                      <div id="convai-root" className="convaiRoot" />
+                      <ElevenLabsConvaiPortal agentId={AGENT_ID} />
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
+
           </div>
         </main>
       </div>
