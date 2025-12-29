@@ -32,7 +32,6 @@ from backend.schemas import (
     SessionItem,
     SessionsListResponse,
     ProgressMarkTopicDoneRequest,
-    ProgressSetCurrentTopicRequest,
     ProgressResponse,
 )
 from backend.url_extract import fetch_and_extract_main_text, fetch_and_extract_topics
@@ -116,7 +115,7 @@ def sessions_list(limit: int = 50) -> SessionsListResponse:
                 url=s.url,
                 selectedTopics=s.selected_topics,
                 completedTopics=s.completed_topics,
-                currentTopic=s.current_topic,
+                currentTopic="",  # Deprecated: no longer used
                 createdAt=s.created_at,
                 updatedAt=s.updated_at,
             )
@@ -136,7 +135,7 @@ def sessions_start(req: SessionStartRequest) -> SessionItem:
             url=s.url,
             selectedTopics=s.selected_topics,
             completedTopics=s.completed_topics,
-            currentTopic=s.current_topic,
+            currentTopic="",  # Deprecated: no longer used
             createdAt=s.created_at,
             updatedAt=s.updated_at,
         )
@@ -156,7 +155,7 @@ def sessions_latest(url: str) -> SessionLatestResponse:
                 url=s.url,
                 selectedTopics=s.selected_topics,
                 completedTopics=s.completed_topics,
-                currentTopic=s.current_topic,
+                currentTopic="",  # Deprecated: no longer used
                 createdAt=s.created_at,
                 updatedAt=s.updated_at,
             )
@@ -187,35 +186,13 @@ def progress_mark_topic_done(req: ProgressMarkTopicDoneRequest) -> ProgressRespo
             url=s.url,
             selectedTopics=s.selected_topics,
             completedTopics=s.completed_topics,
-            currentTopic=s.current_topic,
+            currentTopic="",  # Deprecated: no longer used
             updatedAt=s.updated_at,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Progress mark topic done failed: {e}")
-
-
-@app.post("/sessions/progress/set_current_topic", response_model=ProgressResponse, tags=["Agent Tools"])
-def progress_set_current_topic(req: ProgressSetCurrentTopicRequest) -> ProgressResponse:
-    """
-    Set the current active topic for this session.
-    This can be any topic (doesn't need to be in selectedTopics).
-    """
-    try:
-        s = repo.set_current_topic(req.sessionId, req.topicTitle)
-        return ProgressResponse(
-            sessionId=s.session_id,
-            url=s.url,
-            selectedTopics=s.selected_topics,
-            completedTopics=s.completed_topics,
-            currentTopic=s.current_topic,
-            updatedAt=s.updated_at,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Progress set current topic failed: {e}")
 
 
 @app.post("/extract", response_model=ExtractResponse, tags=["Agent Tools"])

@@ -97,7 +97,6 @@ class SessionItem(BaseModel):
     url: str
     selectedTopics: list[str] = Field(default_factory=list)
     completedTopics: list[str] = Field(default_factory=list)
-    currentTopic: str = ""
     createdAt: str = ""
     updatedAt: str = ""
 
@@ -135,15 +134,9 @@ class ProgressMarkTopicDoneRequest(BaseModel):
     topicTitle: str = Field(..., min_length=1, description="The topic title to mark as completed (must exist in selectedTopics)")
 
 
-class ProgressSetCurrentTopicRequest(BaseModel):
-    sessionId: str = Field(..., min_length=1)
-    topicTitle: str = Field(..., min_length=1, description="The topic title to set as the current active topic")
-
-
 class ProgressResponse(BaseModel):
     sessionId: str
     url: str
     selectedTopics: list[str] = Field(default_factory=list)
     completedTopics: list[str] = Field(default_factory=list)
-    currentTopic: str = ""
     updatedAt: str = ""
