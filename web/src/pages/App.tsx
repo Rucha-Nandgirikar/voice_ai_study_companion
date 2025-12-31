@@ -143,6 +143,8 @@ export function App() {
       try {
         const data = (await getNotes({ sessionId: sid })) as Notes;
         if (!cancelled) setNotes(data);
+        // Also refresh sessions to get updated completedTopics
+        if (!cancelled) await loadSessions();
       } catch {
         // ignore transient errors during deploys
       }
@@ -272,6 +274,17 @@ export function App() {
     }
   }
 
+  function onCreateNewSession() {
+    setSessionId("");
+    setUrl("");
+    setSelectedTopics([]);
+    setCompletedTopics([]);
+    setNotes(null);
+    setTopics(null);
+    setIsNotesAutoRefresh(false);
+    setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
+  }
+
   async function onSelectSession(u: string) {
     // legacy signature kept; now expects encoded "sessionId|url"
     const [sid, urlPart] = u.split("|", 2);
@@ -381,6 +394,29 @@ export function App() {
               </button>
             </div>
             <div className="sessionList">
+              <button
+                onClick={onCreateNewSession}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                  border: "1px solid #3b82f6",
+                  borderRadius: 6,
+                  background: "#3b82f6",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: 13,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                }}
+                title="Create a new session"
+                type="button"
+              >
+                + Create new session
+              </button>
               {sessions.length === 0 ? (
                 <div className="muted" style={{ fontSize: 12 }}>
                   No sessions yet. Paste a URL and click Analyze.
