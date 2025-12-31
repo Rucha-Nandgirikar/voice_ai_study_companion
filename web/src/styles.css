@@ -2,6 +2,26 @@
   color-scheme: light;
 }
 
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(102, 126, 234, 0.6);
+  }
+}
+
+@keyframes cta-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 30px rgba(102, 126, 234, 0.5), 0 4px 20px rgba(0,0,0,0.1);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(102, 126, 234, 0.7), 0 6px 24px rgba(0,0,0,0.15);
+    transform: scale(1.002);
+  }
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -260,12 +280,18 @@ button:disabled {
 
 .status {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 13px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  padding: 10px;
-  white-space: pre-wrap;
+  padding: 12px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.status strong {
+  color: #0f172a;
+  font-weight: 700;
 }
 
 .topics {

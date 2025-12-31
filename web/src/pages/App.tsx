@@ -58,9 +58,7 @@ function safeTitleFromUrl(u: string): string {
 export function App() {
   const [url, setUrl] = useState<string>("");
   const [sessionId, setSessionId] = useState<string>("");
-  const [status, setStatus] = useState<string>(
-    "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
-  );
+  const [status, setStatus] = useState<string>("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [notes, setNotes] = useState<Notes | null>(null);
@@ -100,18 +98,26 @@ export function App() {
     try {
       const res = await getSessions({ limit: 50 });
       const items = Array.isArray(res?.sessions) ? res.sessions : [];
-      setSessions(
-        items
-          .filter((x: any) => x?.url && x?.sessionId)
-          .map((x: any) => ({
-            sessionId: String(x.sessionId),
-            url: String(x.url),
-            title: safeTitleFromUrl(String(x.url)),
-            updatedAt: String(x.updatedAt || ""),
-            selectedTopics: Array.isArray(x.selectedTopics) ? x.selectedTopics : [],
-            completedTopics: Array.isArray(x.completedTopics) ? x.completedTopics : [],
-          }))
-      );
+      const sessionsList = items
+        .filter((x: any) => x?.url && x?.sessionId)
+        .map((x: any) => ({
+          sessionId: String(x.sessionId),
+          url: String(x.url),
+          title: safeTitleFromUrl(String(x.url)),
+          updatedAt: String(x.updatedAt || ""),
+          selectedTopics: Array.isArray(x.selectedTopics) ? x.selectedTopics : [],
+          completedTopics: Array.isArray(x.completedTopics) ? x.completedTopics : [],
+        }));
+      setSessions(sessionsList);
+      
+      // Update completedTopics for the current session if it exists
+      const currentSid = sessionId.trim();
+      if (currentSid) {
+        const currentSession = sessionsList.find((s: SessionItem) => s.sessionId === currentSid);
+        if (currentSession?.completedTopics) {
+          setCompletedTopics(currentSession.completedTopics);
+        }
+      }
     } catch {
       // If backend is redeploying/unavailable, keep the current list.
     }
@@ -153,7 +159,7 @@ export function App() {
   function openPage() {
     const u = url.trim();
     if (!u) {
-      setStatus("Please paste a URL first.");
+      setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
       return;
     }
     // Opening in the same tab would navigate away from the app (and the widget).
@@ -182,7 +188,7 @@ export function App() {
     try {
       const u = url.trim();
       if (!u) {
-        setStatus("Please paste a URL first.");
+        setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
         return;
       }
       setIsLoadingTopics(true);
@@ -190,7 +196,7 @@ export function App() {
       setSelectedTopics([]);
       setSessionId("");
       setCompletedTopics([]);
-      setStatus("Fetching topics…");
+      setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
       
       // Load topics from the page
       const t = (await getTopics({ url: u })) as TopicsResponse;
@@ -212,15 +218,11 @@ export function App() {
         if (completedTopicsList.length > 0) {
           // Show completed topics with green checkmark, but don't pre-select them
           setCompletedTopics(completedTopicsList);
-          setStatus(
-            `Topics loaded. ${completedTopicsList.length} topic(s) previously completed (marked with ✓). Select up to 8 topics for this session, then click Start session.`
-          );
-        } else {
-          setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
         }
+        setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
       } catch {
         // No previous sessions or error - that's fine
-        setStatus("Topics loaded. Select up to 8 topics, then click Start session.");
+        setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
       }
     } catch (e: any) {
       setStatus(`Topics error: ${e?.message || String(e)}`);
@@ -232,20 +234,18 @@ export function App() {
   async function onStartSession() {
     try {
       if (!url.trim()) {
-        setStatus("Please paste a URL first.");
+        setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
         return;
       }
       if (selectedTopics.length === 0) {
-        setStatus("Select at least 1 topic (up to 8), then start the session.");
+        setStatus("<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call and share the URL in the conversation.");
         return;
       }
       setIsStartingSession(true);
       const u = url.trim();
       setTopics(null);
       setIsNotesAutoRefresh(true);
-      setStatus(
-        "Session started.\n\nNext: Start the call (below), paste the URL into the conversation, and say “analyze”.\nThe agent should confirm your selected topics, then begin Topic 1 and write notes via set_summary / append_qa / append_quiz."
-      );
+      setStatus("Step 1: Topics selected ✅<br /><strong>Step 2: Start the voice call and share the URL in the conversation.</strong>");
 
       try {
         const sess = await startSession({ url: u, selectedTopics });
@@ -282,7 +282,7 @@ export function App() {
     setSessionId(realSid);
     setUrl(realUrl);
     setIsNotesAutoRefresh(true);
-    setStatus("Loading session data…");
+    setStatus("Step 1: Topics selected ✅<br /><strong>Step 2: Start the voice call and share the URL in the conversation.</strong>");
 
     // Find the session to get selectedTopics and completedTopics
     const session = sessions.find((s) => s.sessionId === realSid);
@@ -304,7 +304,7 @@ export function App() {
       // Fetch notes
       const data = (await getNotes({ sessionId: realSid })) as Notes;
       setNotes(data);
-      setStatus("Session loaded. Summary, Q&A, quizzes, and topics are displayed below.");
+      setStatus("Step 1: Topics selected ✅<br /><strong>Step 2: Start the voice call and share the URL in the conversation.</strong>");
     } catch (e: any) {
       setStatus(`Load notes error: ${e?.message || String(e)}`);
       setNotes(null);
@@ -333,7 +333,7 @@ export function App() {
       setSelectedTopics([]);
       setIsNotesAutoRefresh(false);
       setStatus(
-        "Paste a URL, click Start session, then start a call with the ElevenLabs Agent. During the call, paste the URL into chat and say “analyze”. The agent will write Summary / Q&A / Quizzes into Notes while you talk."
+        "<strong>Step 1: Paste a URL, get topics, select up to 8 topics, then start the session.</strong><br />Step 2: Start the voice call (bottom-right corner) and share the URL in the conversation."
       );
     }
   }
@@ -451,7 +451,37 @@ export function App() {
                   Download notes
                 </button>
               </div>
-              <div className="status">{status}</div>
+              <div className="status">
+                {status && <div dangerouslySetInnerHTML={{ __html: status }} />}
+                {(selectedTopics.length > 0 || completedTopics.length > 0) && (
+                  <div style={{ display: "flex", gap: 20, marginTop: status ? 12 : 0, paddingTop: status ? 12 : 0, borderTop: status ? "1px solid #e2e8f0" : "none" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: "#475569", marginBottom: 6 }}>Selected Topics:</div>
+                      {selectedTopics.length > 0 ? (
+                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                          {selectedTopics.map((topic, idx) => (
+                            <div key={idx} style={{ marginBottom: 4 }}>• {topic}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted" style={{ fontSize: 11 }}>None selected</div>
+                      )}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 12, color: "#475569", marginBottom: 6 }}>Covered Topics:</div>
+                      {completedTopics.length > 0 ? (
+                        <div style={{ fontSize: 12, color: "#64748b" }}>
+                          {completedTopics.map((topic, idx) => (
+                            <div key={idx} style={{ marginBottom: 4 }}>✓ {topic}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="muted" style={{ fontSize: 11 }}>None covered yet</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {topics?.topics?.length ? (
@@ -552,9 +582,10 @@ export function App() {
               </div>
             ) : null}
 
+
             <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "flex-start" }}>
               {/* Left Column: Notes */}
-              <div style={{ flex: showCallWidget ? "0 0 50%" : "1 1 auto", minWidth: 0 }}>
+              <div style={{ flex: (showCallWidget && sessionId.trim()) ? "0 0 50%" : "1 1 auto", minWidth: 0 }}>
                 <div className="card">
                   {notes && (notes.summary || (notes.qa && notes.qa.length > 0) || (notes.quizzes && notes.quizzes.length > 0)) ? (
                     <>
@@ -574,8 +605,13 @@ export function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      No notes yet. Start a call and ask the agent to analyze, then hang up.
+                    <div className="muted" style={{ marginTop: 6, lineHeight: 1.6 }}>
+                      📝 Conversation becomes notes
+                      <div style={{ marginTop: 8, paddingLeft: 8 }}>
+                        <div style={{ marginBottom: 4 }}>• Summary</div>
+                        <div style={{ marginBottom: 4 }}>• Q&A</div>
+                        <div>• Quizzes</div>
+                      </div>
                     </div>
                   )}
 
@@ -633,26 +669,28 @@ export function App() {
               </div>
 
               {/* Right Column: Call Widget */}
-              <div style={{ flex: "0 0 50%", minWidth: 0 }}>
-                <div className="" style={{ position: "sticky", top: 16 }}>
-                  {/* <div style={{ fontWeight: 800, marginBottom: 8 }}>Call</div> */}
-                  {!AGENT_ID ? (
-                    <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
-                      Missing <code>VITE_AGENT_ID</code>. Set it in <code>web/.env</code> (local) or Vercel env vars.
-                    </div>
-                  ) : (
-                    <>
-                      {selectedTopics.length > 0 ? (
-                        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-                          <strong>Selected topics:</strong> {selectedTopics.join(", ")}
-                        </div>
-                      ) : null}
-                      <div id="convai-root" className="convaiRoot" />
+              {showCallWidget && sessionId.trim() && (
+              // <div style={{ flex: "0 0 50%", minWidth: 0 }}>
+              //   <div className="" style={{ position: "sticky", top: 16 }}>
+              //     {/* <div style={{ fontWeight: 800, marginBottom: 8 }}>Call</div> */}
+              //     {!AGENT_ID ? (
+              //       <div className="muted" style={{ fontSize: 12, textAlign: "center" }}>
+              //         Missing <code>VITE_AGENT_ID</code>. Set it in <code>web/.env</code> (local) or Vercel env vars.
+              //       </div>
+              //     ) : (
+              //       <>
+              //         {selectedTopics.length > 0 ? (
+              //           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+              //             <strong>Selected topics:</strong> {selectedTopics.join(", ")}
+              //           </div>
+              //         ) : null}
+              //         <div id="convai-root" className="convaiRoot" />
                       <ElevenLabsConvaiPortal agentId={AGENT_ID} />
-                    </>
-                  )}
-                </div>
-              </div>
+              //       </>
+              //     )}
+              //   </div>
+              // </div>
+              )}
             </div>
 
           </div>

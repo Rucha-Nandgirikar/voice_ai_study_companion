@@ -3,8 +3,10 @@
 Voice-first tutor that runs as a simple web app (paste a URL) and uses:
 
 - **ElevenLabs Agents** for conversational voice UX (STT/TTS + persona)
-- **ElevenLabs Agents** (configured with Gemini in ElevenLabs) for reasoning + voice
+- **Google Gemini** (configured via ElevenLabs Agents) for LLM reasoning and conversation intelligence
 - **Cloud Run** to host the backend API (FastAPI)
+
+**Note:** Gemini is configured within the ElevenLabs Agents platform, providing the AI reasoning capabilities. The backend does not directly call Google Cloud APIs - all LLM interactions are handled through ElevenLabs.
 
 This repo contains:
 - `backend/`: FastAPI backend (Cloud Run)
@@ -68,7 +70,7 @@ Also ensure the Cloud Run runtime service account has the **Cloud SQL Client** r
 Add these as **Webhook tools** on your ElevenLabs Agent so notes are saved automatically:
 
 - `fetch_page_content(url)` → calls `POST /extract`
-- `get_latest_session(url)` → calls `GET /sessions/latest?url=...` and returns `sessionId` + selectedTopics + completedTopics + currentTopic
+- `get_latest_session(url)` → calls `GET /sessions/latest?url=...` and returns `sessionId` + selectedTopics + completedTopics
 - `set_summary(sessionId, summary)` → calls `POST /notes/set_summary`
 - `append_qa(sessionId, question, answer)` → calls `POST /notes/append_qa` (recommended)
 - `append_quiz(sessionId, question, userAnswer, correctAnswer, explanation)` → calls `POST /notes/append_quiz` (recommended)
@@ -171,7 +173,7 @@ pip install -r requirements.txt
 
 #### Env vars (local/dev)
 
-Option B backend does **not** call Google. No `GOOGLE_API_KEY` needed.
+**Note:** The backend does not directly call Google Cloud APIs. Gemini is configured within ElevenLabs Agents platform, so no `GOOGLE_API_KEY` is needed in the backend code. All LLM reasoning happens through ElevenLabs.
 
 ### 3) Run
 
